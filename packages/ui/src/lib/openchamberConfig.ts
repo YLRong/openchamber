@@ -169,6 +169,7 @@ const readTextFile = async (path: string, directory?: string | null): Promise<st
       queryParams.set('directory', normalizedDirectory);
     }
     const response = await fetch(`${getBaseUrl()}/fs/read?${queryParams.toString()}`, {
+      cache: 'no-store',
       headers: normalizedDirectory ? { 'x-openchamber-directory': normalizedDirectory, 'x-opencode-directory': normalizedDirectory } : undefined,
     });
     if (!response.ok) {
@@ -202,7 +203,10 @@ const resolveHomeDirectory = async (): Promise<string | null> => {
   // In some runtimes, window.__OPENCHAMBER_HOME__ can be workspace/project-root
   // scoped, which would incorrectly route writes into the project directory.
   try {
-    const response = await fetch(`${getBaseUrl()}/fs/home`);
+    const response = await fetch(`${getBaseUrl()}/fs/home`, {
+      // Avoid conditional requests (304 + empty body).
+      cache: 'no-store',
+    });
     if (!response.ok) {
       throw new Error('Failed to resolve home directory from API');
     }

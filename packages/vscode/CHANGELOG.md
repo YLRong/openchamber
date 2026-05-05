@@ -1,3 +1,24 @@
+## [1.10.0] - 2026-05-05
+
+- Chat/UI: added the currently open editor file to chat context, making it faster to ask about the file you are already editing (thanks to @daveotero).
+- Settings/Behavior: added a dedicated Behavior page with global `AGENTS.md` configuration and response style presets, making it easier to tune assistant instructions and answer style across workspaces (thanks to @Yabuku-xD).
+- Chat/UI: added a wide layout option for roomier review sessions.
+- Chat/Streaming: reduced text flicker, preserved first chunks more reliably, and kept long agent sessions from hanging during active responses (thanks to @pasta-paul).
+- Chat/Scrolling: preserved per-session scroll position and kept generated prompts scrolled into view, making session switching and prompt generation feel steadier (thanks to @jwcrystal).
+- Settings/UI: improved settings scrolling and empty states for cleaner setup flows (thanks to @Yabuku-xD).
+- Models/Providers: fixed slash-containing model IDs, refreshed model metadata after OpenCode restarts, and added safer concurrency controls for sessions sharing the same provider (thanks to @yart, @Yabuku-xD).
+- GitHub/MCP: improved fork-aware issue and pull-request listing, PR status handling, and remote MCP header handling for more reliable repository and remote-provider workflows (thanks to @corrm, @ricautomation).
+
+## [1.9.10] - 2026-04-28
+
+- UI/Localization: added Korean interface translations and default new installs back to English when no language has been chosen (thanks to @An-jinu).
+- Chat/Models: unified the model picker with a cleaner, more consistent selection flow (thanks to @daveotero).
+- Chat/UI: improved split-response action placement, error-message alignment, tab close affordances, and overscroll behavior for a more polished conversation view.
+- Sessions/Sidebar: fixed stale session, folder, project, and worktree state after mutations, and polished pinned-session indicators so navigation stays accurate (thanks to @corrm, @Yabuku-xD).
+- Windows: normalized drive-letter paths in extension webviews so file links and workspace paths resolve more reliably (thanks to @sdunfeng).
+- Usage: added MiniMax and Ollama quota support for broader usage visibility in the extension.
+- Reliability/Startup: hardened managed OpenCode startup, preserved shell PATH more reliably, and improved stream/proxy recovery with heartbeat support (thanks to @An-jinu).
+
 ## [1.9.9] - 2026-04-26
 
 - UI/Localization: added translated interface strings for Spanish, Brazilian Portuguese, Ukrainian, and Simplified Chinese, with language selection available in extension settings.

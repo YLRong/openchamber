@@ -83,6 +83,7 @@ type ReasoningTimelineBlockProps = {
     showDuration?: boolean;
     isStreaming?: boolean;
     actions?: React.ReactNode;
+    alwaysShowActions?: boolean;
 };
 
 export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
@@ -94,6 +95,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
     showDuration = true,
     isStreaming = false,
     actions,
+    alwaysShowActions = false,
 }) => {
     const [isExpanded, setIsExpanded] = React.useState(false);
 
@@ -127,7 +129,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
                             className={cn(
                                 'absolute inset-0 transition-opacity',
                                 isExpanded && 'opacity-0',
-                                !isExpanded && 'group-hover/tool:opacity-0'
+                                !isExpanded && (alwaysShowActions ? 'opacity-0' : 'group-hover/tool:opacity-0')
                             )}
                         >
                             <Icon className="h-3.5 w-3.5" />
@@ -136,7 +138,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
                             className={cn(
                                 'absolute inset-0 transition-opacity flex items-center justify-center',
                                 isExpanded && 'opacity-100',
-                                !isExpanded && 'opacity-0 group-hover/tool:opacity-100'
+                                !isExpanded && (alwaysShowActions ? 'opacity-100' : 'opacity-0 group-hover/tool:opacity-100')
                             )}
                         >
                             {isExpanded ? <RiArrowDownSLine className="h-3.5 w-3.5" /> : <RiArrowRightSLine className="h-3.5 w-3.5" />}
@@ -201,12 +203,14 @@ type ReasoningPartProps = {
     part: Part;
     onContentChange?: (reason?: ContentChangeReason) => void;
     messageId: string;
+    alwaysShowActions?: boolean;
 };
 
 const ReasoningPart = React.memo(({
     part,
     onContentChange,
     messageId,
+    alwaysShowActions = false,
 }: ReasoningPartProps) => {
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
     const partWithText = part as PartWithText;
@@ -235,6 +239,7 @@ const ReasoningPart = React.memo(({
             time={time}
             showDuration={chatRenderMode !== 'sorted'}
             isStreaming={isStreaming}
+            alwaysShowActions={alwaysShowActions}
         />
     );
 });

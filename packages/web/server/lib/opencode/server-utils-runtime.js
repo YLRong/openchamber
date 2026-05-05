@@ -79,11 +79,6 @@ export const createServerUtilsRuntime = (dependencies) => {
   const buildManagedOpenCodePath = () => {
     const currentPath = process.env.PATH || '';
     const loginShellPath = getLoginShellPath();
-    const home = os.homedir();
-
-    if (pathLooksUserConfigured(currentPath, home, path.delimiter)) {
-      return currentPath;
-    }
 
     return mergePathValues(loginShellPath || '', currentPath, path.delimiter);
   };

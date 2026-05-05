@@ -14,6 +14,7 @@ import ScrollToBottomButton from './components/ScrollToBottomButton';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { useChatScrollManager, type AnimationHandlers, type ContentChangeReason } from '@/hooks/useChatScrollManager';
 import { useChatTimelineController } from './hooks/useChatTimelineController';
+import { TimelineDialog } from './TimelineDialog';
 import { useChatTurnNavigation } from './hooks/useChatTurnNavigation';
 import { useDeviceInfo } from '@/lib/device';
 import { Button } from '@/components/ui/button';
@@ -46,6 +47,7 @@ import { EMPTY_OBJECT, EMPTY_PERMISSION_REQUESTS, EMPTY_QUESTION_REQUESTS, empty
 const EMPTY_MESSAGES: Array<{ info: Message; parts: Part[] }> = emptyArray<{ info: Message; parts: Part[] }>() as Array<{ info: Message; parts: Part[] }>;
 const IDLE_SESSION_STATUS = { type: 'idle' as const };
 const SESSION_RESELECTED_EVENT = 'openchamber:session-reselected';
+const CHAT_FORCE_SCROLL_BOTTOM_EVENT = 'openchamber:chat-force-scroll-bottom';
 const DEFAULT_RETRY_MESSAGE = 'Quota limit reached. Retrying automatically.';
 const CHAT_SCROLL_STYLE = {
     overflowAnchor: 'none',
@@ -340,6 +342,8 @@ export const ChatContainer: React.FC = () => {
     const isExpandedInput = useUIStore((state) => state.isExpandedInput);
     const stickyUserHeader = useUIStore((state) => state.stickyUserHeader);
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
+    const isTimelineDialogOpen = useUIStore((s) => s.isTimelineDialogOpen);
+    const setTimelineDialogOpen = useUIStore((s) => s.setTimelineDialogOpen);
 
     // Streaming state
     const streamingMessageId = useStreamingStore(
@@ -550,6 +554,7 @@ export const ChatContainer: React.FC = () => {
         isPinned,
         isOverflowing,
         isProgrammaticFollowActive,
+        clearRestoreInProgress,
     } = useChatScrollManager({
         currentSessionId,
         sessionMessageCount,
@@ -577,18 +582,41 @@ export const ChatContainer: React.FC = () => {
         isPinned,
         isOverflowing,
     });
-    const { loadEarlier, resumeToBottomInstant } = timelineController;
+    const { loadEarlier, resumeToBottomInstant, restoreSavedScrollPosition } = timelineController;
 
-    const runLatestInstantResume = React.useCallback(async () => {
+    const runLatestInstantResume = React.useCallback(async (options?: { force?: boolean }) => {
         if (!currentSessionId) {
             scrollToBottom({ instant: true, force: true });
             return;
         }
-        await resumeToBottomInstant();
-    }, [currentSessionId, resumeToBottomInstant, scrollToBottom]);
 
-    const resumeToLatestInstant = React.useCallback(() => {
-        void runLatestInstantResume();
+        if (options?.force) {
+            await resumeToBottomInstant();
+            clearRestoreInProgress(currentSessionId);
+            return;
+        }
+
+        // Check if this session has a saved non-bottom scroll position.
+        const savedMemState = sessionMemoryStateMap.get(currentSessionId);
+        const savedPos = savedMemState?.scrollPosition;
+        if (savedPos && !sessionIsWorking) {
+            const savedMaxScroll = Math.max(0, savedPos.scrollHeight - savedPos.clientHeight);
+            // Use the same pixel threshold as the pin logic: 10% of clientHeight, clamped.
+            const threshold = Math.max(24, Math.min(200, savedPos.clientHeight * 0.10));
+            const distanceFromSavedBottom = savedMaxScroll - savedPos.scrollTop;
+            if (savedMaxScroll > 0 && distanceFromSavedBottom > threshold) {
+                await restoreSavedScrollPosition(savedPos);
+                clearRestoreInProgress(currentSessionId);
+                return;
+            }
+        }
+
+        await resumeToBottomInstant();
+        clearRestoreInProgress(currentSessionId);
+    }, [clearRestoreInProgress, currentSessionId, restoreSavedScrollPosition, resumeToBottomInstant, scrollToBottom, sessionIsWorking, sessionMemoryStateMap]);
+
+    const resumeToLatestInstant = React.useCallback((options?: { force?: boolean }) => {
+        void runLatestInstantResume(options);
     }, [runLatestInstantResume]);
 
     React.useEffect(() => {
@@ -661,6 +689,12 @@ export const ChatContainer: React.FC = () => {
     React.useEffect(() => {
         if (typeof window === 'undefined' || !currentSessionId) return;
 
+        const handleForceScrollBottom = (event: Event) => {
+            const customEvent = event as CustomEvent<{ sessionId?: string }>;
+            if (customEvent.detail?.sessionId && customEvent.detail.sessionId !== currentSessionId) return;
+            resumeToLatestInstant({ force: true });
+        };
+
         const handleSessionReselected = (event: Event) => {
             const customEvent = event as CustomEvent<string>;
             if (customEvent.detail !== currentSessionId) return;
@@ -668,11 +702,13 @@ export const ChatContainer: React.FC = () => {
             void resumeToBottomInstant();
         };
 
+        window.addEventListener(CHAT_FORCE_SCROLL_BOTTOM_EVENT, handleForceScrollBottom as EventListener);
         window.addEventListener(SESSION_RESELECTED_EVENT, handleSessionReselected as EventListener);
         return () => {
+            window.removeEventListener(CHAT_FORCE_SCROLL_BOTTOM_EVENT, handleForceScrollBottom as EventListener);
             window.removeEventListener(SESSION_RESELECTED_EVENT, handleSessionReselected as EventListener);
         };
-    }, [currentSessionId, isOverflowing, isPinned, isProgrammaticFollowActive, resumeToBottomInstant]);
+    }, [currentSessionId, isOverflowing, isPinned, isProgrammaticFollowActive, resumeToBottomInstant, resumeToLatestInstant]);
 
     React.useLayoutEffect(() => {
         const container = scrollRef.current;
@@ -728,6 +764,7 @@ export const ChatContainer: React.FC = () => {
         const hasHashTarget = typeof window !== 'undefined' && window.location.hash.length > 0;
         if (hasHashTarget) {
             lastScrolledSessionRef.current = currentSessionId;
+            clearRestoreInProgress(currentSessionId);
             return;
         }
 
@@ -741,7 +778,7 @@ export const ChatContainer: React.FC = () => {
         window.requestAnimationFrame(() => {
             resumeToLatestInstant();
         });
-    }, [currentSessionId, resumeToLatestInstant]);
+    }, [clearRestoreInProgress, currentSessionId, resumeToLatestInstant]);
 
     React.useEffect(() => {
         if (!currentSessionId) return;
@@ -923,19 +960,27 @@ export const ChatContainer: React.FC = () => {
             <div
                 className={cn(
                     'relative z-10',
-					isDesktopExpandedInput
-						? 'flex-1 min-h-0 bg-background'
-						: 'bg-background'
-				)}
-			>
-				{!isDesktopExpandedInput && sessionMessages.length > 0 && (
-					<ScrollToBottomButton
+                    isDesktopExpandedInput
+                        ? 'flex-1 min-h-0 bg-background'
+                        : 'bg-background'
+                )}
+            >
+                {!isDesktopExpandedInput && sessionMessages.length > 0 && (
+                    <ScrollToBottomButton
                         visible={timelineController.showScrollToBottom}
                         onClick={navigation.resumeToLatest}
                     />
                 )}
                 <ChatInput scrollToBottom={resumeToLatestInstant} />
             </div>
+
+            <TimelineDialog
+                open={isTimelineDialogOpen}
+                onOpenChange={setTimelineDialogOpen}
+                onScrollToMessage={timelineController.scrollToMessage}
+                onScrollByTurnOffset={navigation.scrollByTurnOffset}
+                onResumeToLatest={resumeToLatestInstant}
+            />
         </div>
     );
 };

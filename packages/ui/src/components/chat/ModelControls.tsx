@@ -25,6 +25,7 @@ import {
     RiFileMusicLine,
     RiFilePdfLine,
     RiFileVideoLine,
+    RiLoader4Line,
     RiPencilAiLine,
     RiQuestionLine,
     RiSearchLine,
@@ -73,6 +74,7 @@ import { useIsTextTruncated } from '@/hooks/useIsTextTruncated';
 import type { BackendControlSurface, BackendControlSurfaceOption, BackendDescriptor } from '@/lib/api/types';
 import { formatEffortLabel, getCycledPrimaryAgentName, type MobileControlsPanel } from './mobileControlsUtils';
 import { useI18n } from '@/lib/i18n';
+import { useOpenCodeReadiness } from '@/hooks/useOpenCodeReadiness';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type IconComponent = ComponentType<any>;
@@ -355,6 +357,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     onMobilePanelChange,
 }) => {
     const { t } = useI18n();
+    const { isReady, isUnavailable } = useOpenCodeReadiness();
+    const readinessLabel = isUnavailable ? t('common.unavailable') : t('common.loading');
     const providers = useConfigStore((state) => state.providers);
     const currentProviderId = useConfigStore((state) => state.currentProviderId);
     const currentModelId = useConfigStore((state) => state.currentModelId);
@@ -449,7 +453,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const [defaultBackendId, setDefaultBackendId] = React.useState('');
     const { favoriteModelsList, recentModelsList } = useModelLists();
 
-    const { isMobile } = useDeviceInfo();
+    const { isMobile, isTablet } = useDeviceInfo();
+    const alwaysShowHoverDetails = isMobile || isTablet;
     const isDesktop = React.useMemo(() => isDesktopShell(), []);
     const isVSCodeRuntime = useIsVSCodeRuntime();
     // Only use mobile panels on actual mobile devices, VSCode uses desktop dropdowns
@@ -2883,7 +2888,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     ) : slides.length > 0 ? (
                         <div className={cn(
                             "items-center",
-                            shouldAnimate ? "flex w-[140px] justify-end" : ((isHighlighted || isSelected) ? "flex" : "hidden group-hover:flex")
+                            shouldAnimate ? "flex w-[140px] justify-end" : ((isHighlighted || isSelected || alwaysShowHoverDetails) ? "flex" : "hidden group-hover:flex")
                         )}>
                             {shouldAnimate ? (
                                 <TextLoop interval={2.1} transition={{ duration: 0.25 }} trigger={shouldAnimate}>
@@ -3168,9 +3173,9 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         let currentFlatIndex = 0;
 
         return (
-            <Tooltip delayDuration={1000}>
+            <Tooltip delayDuration={600}>
                 {!isCompact ? (
-                    <DropdownMenu open={agentMenuOpen} onOpenChange={handleModelMenuOpenChange}>
+                    <DropdownMenu open={isReady && agentMenuOpen} onOpenChange={isReady ? handleModelMenuOpenChange : undefined}>
                         <TooltipTrigger asChild>
                             <DropdownMenuTrigger asChild>
                                 <div
@@ -3179,7 +3184,18 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                         buttonHeight
                                     )}
                                 >
-                                    {currentProviderId ? (
+                                    {!isReady ? (
+                                        <>
+                                            <RiLoader4Line className={cn(controlIconSize, 'animate-spin text-muted-foreground flex-shrink-0')} />
+                                            <span className={cn(
+                                                'model-controls__model-label',
+                                                controlTextSize,
+                                                'font-medium whitespace-nowrap text-muted-foreground min-w-0'
+                                            )}>
+                                                {readinessLabel}
+                                            </span>
+                                        </>
+                                    ) : currentProviderId ? (
                                         <>
                                             <ProviderLogo
                                                 providerId={currentProviderId}
@@ -3190,6 +3206,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                     ) : (
                                         <RiPencilAiLine className={cn(controlIconSize, 'text-muted-foreground')} />
                                     )}
+                                    {isReady && (
                                         <span
                                             ref={modelLabelRef}
                                             key={`${currentProviderId}-${currentModelId}`}
@@ -3204,6 +3221,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                                 {currentModelDisplayName}
                                             </span>
                                         </span>
+                                    )}
                                 </div>
                             </DropdownMenuTrigger>
                         </TooltipTrigger>
@@ -3430,35 +3448,47 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 ) : (
                     <button
                         type="button"
-                        onClick={() => setActiveMobilePanel('model')}
-                        onTouchStart={() => handleLongPressStart('model')}
-                        onTouchEnd={handleLongPressEnd}
-                        onTouchCancel={handleLongPressEnd}
+                        onClick={isReady ? () => setActiveMobilePanel('model') : undefined}
+                        onTouchStart={isReady ? () => handleLongPressStart('model') : undefined}
+                        onTouchEnd={isReady ? handleLongPressEnd : undefined}
+                        onTouchCancel={isReady ? handleLongPressEnd : undefined}
+                        disabled={!isReady}
                         className={cn(
                             'model-controls__model-trigger flex items-center gap-1.5 min-w-0 focus:outline-none',
-                            'cursor-pointer hover:bg-transparent hover:opacity-70',
+                            isReady ? 'cursor-pointer hover:bg-transparent hover:opacity-70' : 'opacity-60 cursor-not-allowed',
                             buttonHeight
                         )}
                     >
-                        {currentProviderId ? (
-                            <ProviderLogo
-                                providerId={currentProviderId}
-                                className={cn(controlIconSize, 'flex-shrink-0')}
-                            />
+                        {!isReady ? (
+                            <>
+                                <RiLoader4Line className={cn(controlIconSize, 'animate-spin text-muted-foreground flex-shrink-0')} />
+                                <span className="typography-micro font-medium text-muted-foreground min-w-0">
+                                    {readinessLabel}
+                                </span>
+                            </>
                         ) : (
-                            <RiPencilAiLine className={cn(controlIconSize, 'text-muted-foreground')} />
+                            <>
+                                {currentProviderId ? (
+                                    <ProviderLogo
+                                        providerId={currentProviderId}
+                                        className={cn(controlIconSize, 'flex-shrink-0')}
+                                    />
+                                ) : (
+                                    <RiPencilAiLine className={cn(controlIconSize, 'text-muted-foreground')} />
+                                )}
+                                <span
+                                    ref={modelLabelRef}
+                                    className={cn(
+                                        'model-controls__model-label typography-micro font-medium overflow-hidden min-w-0',
+                                        isMobile ? 'max-w-[120px]' : 'max-w-[220px]',
+                                    )}
+                                >
+                                    <span className={cn('marquee-text', isModelLabelTruncated && 'marquee-text--active')}>
+                                        {currentModelDisplayName}
+                                    </span>
+                                </span>
+                            </>
                         )}
-                        <span
-                            ref={modelLabelRef}
-                            className={cn(
-                                'model-controls__model-label typography-micro font-medium overflow-hidden min-w-0',
-                                isMobile ? 'max-w-[120px]' : 'max-w-[220px]',
-                            )}
-                        >
-                            <span className={cn('marquee-text', isModelLabelTruncated && 'marquee-text--active')}>
-                                {currentModelDisplayName}
-                            </span>
-                        </span>
                     </button>
                 )}
                 {renderModelTooltipContent()}
@@ -3595,7 +3625,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     };
 
     const renderVariantSelector = () => {
-        if (!hasVariants) {
+        if (!isReady || !hasVariants) {
             return null;
         }
 
@@ -3629,7 +3659,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         }
 
         return (
-            <Tooltip delayDuration={800}>
+            <Tooltip delayDuration={600}>
                 <DropdownMenu>
                     <TooltipTrigger asChild>
                         <DropdownMenuTrigger asChild>
@@ -3693,33 +3723,55 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         if (!isCompact) {
             return (
                 <div className="flex items-center gap-2 min-w-0">
-                    <Tooltip delayDuration={1000}>
-                        <DropdownMenu open={isAgentSelectorOpen} onOpenChange={setIsAgentSelectorOpen}>
+                    <Tooltip delayDuration={600}>
+                        <DropdownMenu open={isReady && isAgentSelectorOpen} onOpenChange={isReady ? setIsAgentSelectorOpen : undefined}>
                             <TooltipTrigger asChild>
                                 <DropdownMenuTrigger asChild>
                                     <div className={cn(
                                         'flex items-center gap-1.5 transition-colors cursor-pointer hover:bg-transparent hover:opacity-70 min-w-0',
                                         buttonHeight
                                     )}>
-                                        <RiAiAgentLine
-                                            className={cn(
-                                                controlIconSize,
-                                                'flex-shrink-0',
-                                        uiAgentName && primarySelectorKind === 'agent' ? '' : 'text-muted-foreground'
-                                    )}
-                                    style={uiAgentName && primarySelectorKind === 'agent' ? { color: `var(${getAgentColor(uiAgentName).var})` } : undefined}
-                                />
-                                        <span
-                                            className={cn(
-                                                'model-controls__agent-label',
-                                                controlTextSize,
-                                                'font-medium min-w-0 truncate',
-                                                isDesktop ? 'max-w-[220px]' : undefined
-                                            )}
-                                            style={uiAgentName && primarySelectorKind === 'agent' ? { color: `var(${getAgentColor(uiAgentName).var})` } : undefined}
-                                        >
-                                            {getAgentDisplayName()}
-                                        </span>
+                                        {!isReady ? (
+                                            <>
+                                                <RiLoader4Line
+                                                    className={cn(
+                                                        controlIconSize,
+                                                        'flex-shrink-0 animate-spin text-muted-foreground'
+                                                    )}
+                                                />
+                                                <span
+                                                    className={cn(
+                                                        'model-controls__agent-label',
+                                                        controlTextSize,
+                                                        'font-medium min-w-0 truncate text-muted-foreground'
+                                                    )}
+                                                >
+                                                    {readinessLabel}
+                                                </span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <RiAiAgentLine
+                                                    className={cn(
+                                                        controlIconSize,
+                                                        'flex-shrink-0',
+                                                        uiAgentName && primarySelectorKind === 'agent' ? '' : 'text-muted-foreground'
+                                                    )}
+                                                    style={uiAgentName && primarySelectorKind === 'agent' ? { color: `var(${getAgentColor(uiAgentName).var})` } : undefined}
+                                                />
+                                                <span
+                                                    className={cn(
+                                                        'model-controls__agent-label',
+                                                        controlTextSize,
+                                                        'font-medium min-w-0 truncate',
+                                                        isDesktop ? 'max-w-[220px]' : undefined
+                                                    )}
+                                                    style={uiAgentName && primarySelectorKind === 'agent' ? { color: `var(${getAgentColor(uiAgentName).var})` } : undefined}
+                                                >
+                                                    {getAgentDisplayName()}
+                                                </span>
+                                            </>
+                                        )}
                                     </div>
                                 </DropdownMenuTrigger>
                             </TooltipTrigger>
@@ -3799,35 +3851,58 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         return (
             <button
                 type="button"
-                onClick={() => setActiveMobilePanel('agent')}
-                onTouchStart={() => handleLongPressStart('agent')}
-                onTouchEnd={handleLongPressEnd}
-                onTouchCancel={handleLongPressEnd}
+                onClick={isReady ? () => setActiveMobilePanel('agent') : undefined}
+                onTouchStart={isReady ? () => handleLongPressStart('agent') : undefined}
+                onTouchEnd={isReady ? handleLongPressEnd : undefined}
+                onTouchCancel={isReady ? handleLongPressEnd : undefined}
+                disabled={!isReady}
                 className={cn(
                     'model-controls__agent-trigger flex items-center gap-1.5 transition-colors min-w-0 focus:outline-none',
                     buttonHeight,
-                    'cursor-pointer hover:bg-transparent hover:opacity-70',
+                    isReady ? 'cursor-pointer hover:bg-transparent hover:opacity-70' : 'opacity-60 cursor-not-allowed',
                 )}
             >
-                                        <RiAiAgentLine
-                                            className={cn(
-                                                controlIconSize,
-                                                'flex-shrink-0',
-                                                uiAgentName ? '' : 'text-muted-foreground'
-                                            )}
-                                            style={uiAgentName && primarySelectorKind === 'agent' ? { color: `var(${getAgentColor(uiAgentName).var})` } : undefined}
-                                        />
-                <span
-                    className={cn(
-                        'model-controls__agent-label',
-                        controlTextSize,
-                        'font-medium truncate min-w-0',
-                        isMobile && 'max-w-[60px]'
-                    )}
-                                            style={uiAgentName && primarySelectorKind === 'agent' ? { color: `var(${getAgentColor(uiAgentName).var})` } : undefined}
-                                        >
-                                            {getAgentDisplayName()}
-                                        </span>
+                {!isReady ? (
+                    <>
+                        <RiLoader4Line
+                            className={cn(
+                                controlIconSize,
+                                'flex-shrink-0 animate-spin text-muted-foreground'
+                            )}
+                        />
+                        <span
+                            className={cn(
+                                'model-controls__agent-label',
+                                controlTextSize,
+                                'font-medium truncate min-w-0 text-muted-foreground'
+                            )}
+                        >
+                            {readinessLabel}
+                        </span>
+                    </>
+                ) : (
+                    <>
+                        <RiAiAgentLine
+                            className={cn(
+                                controlIconSize,
+                                'flex-shrink-0',
+                                uiAgentName && primarySelectorKind === 'agent' ? '' : 'text-muted-foreground'
+                            )}
+                            style={uiAgentName && primarySelectorKind === 'agent' ? { color: `var(${getAgentColor(uiAgentName).var})` } : undefined}
+                        />
+                        <span
+                            className={cn(
+                                'model-controls__agent-label',
+                                controlTextSize,
+                                'font-medium truncate min-w-0',
+                                isMobile && 'max-w-[60px]'
+                            )}
+                            style={uiAgentName && primarySelectorKind === 'agent' ? { color: `var(${getAgentColor(uiAgentName).var})` } : undefined}
+                        >
+                            {getAgentDisplayName()}
+                        </span>
+                    </>
+                )}
             </button>
         );
     };

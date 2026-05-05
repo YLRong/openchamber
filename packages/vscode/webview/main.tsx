@@ -8,6 +8,7 @@ import {
   type VSCodeThemeKind,
   type VSCodeThemePayload,
 } from '@openchamber/ui/lib/theme/vscode/adapter';
+import type { VSCodeActiveEditorFile } from '@/sync/input-store';
 
 type ConnectionStatus = 'connecting' | 'connected' | 'error' | 'disconnected';
 type PanelType = 'chat' | 'agentManager';
@@ -23,6 +24,9 @@ declare global {
       theme: string;
       connectionStatus: string;
       cliAvailable?: boolean;
+      extensionVersion?: string;
+      platform?: string;
+      arch?: string;
       panelType?: PanelType;
       viewMode?: 'sidebar' | 'editor';
       initialSessionId?: string | null;
@@ -843,6 +847,18 @@ const handleLocalApiRequest = async (url: URL, init?: RequestInit) => {
     return new Response(JSON.stringify(updated), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 
+  if (normalizedPathname === '/api/behavior/agents-md') {
+    if (method === 'GET') {
+      const data = await sendBridgeMessage('api:behavior/agents-md:get');
+      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (method === 'PUT') {
+      const body = init?.body ? JSON.parse(init.body as string) : {};
+      const data = await sendBridgeMessage('api:behavior/agents-md:save', body);
+      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
   if (pathname === '/api/magic-prompts') {
     if (method === 'GET') {
       const data = await sendBridgeMessage('api:magic-prompts:get');
@@ -907,8 +923,8 @@ const handleLocalApiRequest = async (url: URL, init?: RequestInit) => {
       const currentVersion = url.searchParams.get('currentVersion') || undefined;
       const instanceMode = url.searchParams.get('instanceMode') || 'local';
       const deviceClass = url.searchParams.get('deviceClass') || 'desktop';
-      const platform = url.searchParams.get('platform') || undefined;
-      const arch = url.searchParams.get('arch') || undefined;
+      const platform = url.searchParams.get('platform') || window.__VSCODE_CONFIG__?.platform || undefined;
+      const arch = url.searchParams.get('arch') || window.__VSCODE_CONFIG__?.arch || undefined;
       const reportUsageRaw = (url.searchParams.get('reportUsage') || 'true').toLowerCase();
       const reportUsage = !(reportUsageRaw === 'false' || reportUsageRaw === '0' || reportUsageRaw === 'no');
       const data = await sendBridgeMessage('api:openchamber:update-check', {
@@ -1216,6 +1232,13 @@ onCommand('showSettings', () => {
 onCommand('settingsSynced', () => {
   import('@openchamber/ui/lib/persistence').then(({ syncDesktopSettings }) => {
     void syncDesktopSettings();
+  });
+});
+
+// Listen for active editor file changes from the extension
+onCommand('activeEditorFile', (payload) => {
+  import('@/sync/input-store').then(({ useInputStore }) => {
+    useInputStore.getState().setActiveEditorFile((payload as VSCodeActiveEditorFile | null) ?? null);
   });
 });
 

@@ -57,11 +57,11 @@ import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import type { RuntimeAPIs } from '@/lib/api/types';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { QuickOpenDialog } from '@/components/ui/QuickOpenDialog';
 import { McpOAuthCallbackPage } from '@/components/sections/mcp/McpOAuthCallbackPage';
 import { MCP_OAUTH_CALLBACK_PATH } from '@/components/sections/mcp/mcpOAuth';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { useI18n } from '@/lib/i18n';
+import { applyMobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 
 // Lazy-loaded heavy views — loaded on demand to reduce initial bundle size.
 const OnboardingScreen = lazyWithChunkRecovery(() =>
@@ -230,6 +230,8 @@ function App({ apis }: AppProps) {
   const [initRetryExhausted, setInitRetryExhausted] = React.useState(false);
   const [initRetryEpoch, setInitRetryEpoch] = React.useState(0);
   const [manualInitRetrying, setManualInitRetrying] = React.useState(false);
+  const wideChatLayoutEnabled = useUIStore((state) => state.wideChatLayoutEnabled);
+  const mobileKeyboardMode = useUIStore((state) => state.mobileKeyboardMode);
   const isDesktopRuntime = React.useMemo(() => isDesktopShell(), []);
   const setPlanModeEnabled = useFeatureFlagsStore((state) => state.setPlanModeEnabled);
   const [bootInjectionStatus, setBootInjectionStatus] = React.useState<BootInjectionStatus>(() => {
@@ -264,8 +266,19 @@ function App({ apis }: AppProps) {
   }, [showMemoryDebug]);
 
   React.useEffect(() => {
+    applyMobileKeyboardMode(mobileKeyboardMode);
+  }, [mobileKeyboardMode]);
+
+  React.useEffect(() => {
     setIsVSCodeRuntime(apis.runtime.isVSCode);
   }, [apis.runtime.isVSCode]);
+
+  React.useEffect(() => {
+    document.documentElement.classList.toggle('wide-chat-layout', wideChatLayoutEnabled);
+    return () => {
+      document.documentElement.classList.remove('wide-chat-layout');
+    };
+  }, [wideChatLayoutEnabled]);
 
   React.useEffect(() => {
     registerRuntimeAPIs(apis);
@@ -838,7 +851,7 @@ function App({ apis }: AppProps) {
       <ErrorBoundary>
         <SyncProvider sdk={opencodeClient.getSdkClient()} directory={currentDirectory || ''}>
           <RuntimeAPIProvider apis={apis}>
-            <TooltipProvider delayDuration={700} skipDelayDuration={150}>
+            <TooltipProvider delayDuration={300} skipDelayDuration={150}>
               <div className="h-full text-foreground bg-background">
                 <EmbeddedSessionSelectionGate embeddedSessionChat={embeddedSessionChat} isVSCodeRuntime={isVSCodeRuntime} />
                 <SyncAppEffects embeddedBackgroundWorkEnabled={embeddedBackgroundWorkEnabled} />
@@ -883,7 +896,7 @@ function App({ apis }: AppProps) {
       <ErrorBoundary>
         <SyncProvider sdk={opencodeClient.getSdkClient()} directory={currentDirectory || ''}>
           <RuntimeAPIProvider apis={apis}>
-            <TooltipProvider delayDuration={700} skipDelayDuration={150}>
+            <TooltipProvider delayDuration={300} skipDelayDuration={150}>
               <div className="h-full text-foreground bg-background">
                 <SyncAppEffects embeddedBackgroundWorkEnabled={embeddedBackgroundWorkEnabled} />
                 <AgentManagerView />
@@ -901,7 +914,7 @@ function App({ apis }: AppProps) {
         <SyncProvider sdk={opencodeClient.getSdkClient()} directory={currentDirectory || ''}>
           <RuntimeAPIProvider apis={apis}>
             <FireworksProvider>
-              <TooltipProvider delayDuration={700} skipDelayDuration={150}>
+              <TooltipProvider delayDuration={300} skipDelayDuration={150}>
                 <div className="h-full text-foreground bg-background">
                   <SyncAppEffects embeddedBackgroundWorkEnabled={embeddedBackgroundWorkEnabled} />
                   <VSCodeLayout />
@@ -926,7 +939,7 @@ function App({ apis }: AppProps) {
         <RuntimeAPIProvider apis={apis}>
           <FireworksProvider>
             <VoiceProvider>
-              <TooltipProvider delayDuration={700} skipDelayDuration={150}>
+              <TooltipProvider delayDuration={300} skipDelayDuration={150}>
                 <div className={isDesktopRuntime ? 'h-full text-foreground bg-transparent' : 'h-full text-foreground bg-background'}>
                   <SyncAppEffects embeddedBackgroundWorkEnabled={embeddedBackgroundWorkEnabled} />
                   <MainLayout />
@@ -934,7 +947,6 @@ function App({ apis }: AppProps) {
                   {!isBootShell && (
                     <>
                       <ConfigUpdateOverlay />
-                      <QuickOpenDialog />
                       <AboutDialogWrapper />
                       {showMemoryDebug && (
                         <MemoryDebugPanel onClose={() => setShowMemoryDebug(false)} />

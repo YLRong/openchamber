@@ -26,6 +26,7 @@ import { updateDesktopSettings } from '@/lib/persistence';
 import { CODE_FONT_OPTIONS, DEFAULT_MONO_FONT, DEFAULT_UI_FONT, UI_FONT_OPTIONS, type MonoFontOption, type UiFontOption } from '@/lib/fontOptions';
 import { useI18n, type Locale } from '@/lib/i18n';
 import { useConfigStore } from '@/stores/useConfigStore';
+import { normalizeMobileKeyboardMode, supportsMobileKeyboardResizeContent, type MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 import {
     setDirectoryShowHidden,
     useDirectoryShowHidden,
@@ -112,6 +113,19 @@ const PWA_ORIENTATION_OPTIONS: Option<'system' | 'portrait' | 'landscape'>[] = [
         id: 'landscape',
         labelKey: 'settings.openchamber.visual.option.pwaOrientation.landscape.label',
         descriptionKey: 'settings.openchamber.visual.option.pwaOrientation.landscape.description',
+    },
+];
+
+const MOBILE_KEYBOARD_MODE_OPTIONS: Option<MobileKeyboardMode>[] = [
+    {
+        id: 'native',
+        labelKey: 'settings.openchamber.visual.option.mobileKeyboardMode.native.label',
+        descriptionKey: 'settings.openchamber.visual.option.mobileKeyboardMode.native.description',
+    },
+    {
+        id: 'resize-content',
+        labelKey: 'settings.openchamber.visual.option.mobileKeyboardMode.resizeContent.label',
+        descriptionKey: 'settings.openchamber.visual.option.mobileKeyboardMode.resizeContent.description',
     },
 ];
 
@@ -220,7 +234,7 @@ const normalizeUserMessageRenderingMode = (mode: unknown): 'markdown' | 'plain' 
     return mode === 'markdown' ? 'markdown' : 'plain';
 };
 
-export type VisibleSetting = 'theme' | 'pwaInstallName' | 'pwaOrientation' | 'timeFormat' | 'weekStart' | 'fontSize' | 'terminalFontSize' | 'spacing' | 'inputBarOffset' | 'mermaidRendering' | 'userMessageRendering' | 'chatRenderMode' | 'messageTransport' | 'activityRenderMode' | 'stickyUserHeader' | 'splitAssistantMessageActions' | 'diffLayout' | 'mobileStatusBar' | 'dotfiles' | 'reasoning' | 'showToolFileIcons' | 'expandedTools' | 'queueMode' | 'terminalQuickKeys' | 'persistDraft' | 'inputSpellcheck' | 'reportUsage';
+export type VisibleSetting = 'theme' | 'pwaInstallName' | 'pwaOrientation' | 'mobileKeyboardMode' | 'timeFormat' | 'weekStart' | 'fontSize' | 'terminalFontSize' | 'spacing' | 'inputBarOffset' | 'mermaidRendering' | 'userMessageRendering' | 'chatRenderMode' | 'messageTransport' | 'activityRenderMode' | 'stickyUserHeader' | 'wideChatLayout' | 'splitAssistantMessageActions' | 'diffLayout' | 'mobileStatusBar' | 'dotfiles' | 'reasoning' | 'showToolFileIcons' | 'expandedTools' | 'queueMode' | 'terminalQuickKeys' | 'persistDraft' | 'inputSpellcheck' | 'reportUsage';
 
 interface OpenChamberVisualSettingsProps {
     /** Which settings to show. If undefined, shows all. */
@@ -242,6 +256,8 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const setUserMessageRenderingMode = useUIStore(state => state.setUserMessageRenderingMode);
     const stickyUserHeader = useUIStore(state => state.stickyUserHeader);
     const setStickyUserHeader = useUIStore(state => state.setStickyUserHeader);
+    const wideChatLayoutEnabled = useUIStore(state => state.wideChatLayoutEnabled);
+    const setWideChatLayoutEnabled = useUIStore(state => state.setWideChatLayoutEnabled);
     const chatRenderMode = useUIStore(state => state.chatRenderMode);
     const setChatRenderMode = useUIStore(state => state.setChatRenderMode);
     const activityRenderMode = useUIStore(state => state.activityRenderMode);
@@ -258,6 +274,8 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const setPadding = useUIStore(state => state.setPadding);
     const inputBarOffset = useUIStore(state => state.inputBarOffset);
     const setInputBarOffset = useUIStore(state => state.setInputBarOffset);
+    const mobileKeyboardMode = useUIStore(state => state.mobileKeyboardMode);
+    const setMobileKeyboardMode = useUIStore(state => state.setMobileKeyboardMode);
     const diffLayoutPreference = useUIStore(state => state.diffLayoutPreference);
     const setDiffLayoutPreference = useUIStore(state => state.setDiffLayoutPreference);
     const diffViewMode = useUIStore(state => state.diffViewMode);
@@ -366,6 +384,11 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         void updateDesktopSettings({ stickyUserHeader: enabled });
     }, [setStickyUserHeader]);
 
+    const handleWideChatLayoutChange = React.useCallback((enabled: boolean) => {
+        setWideChatLayoutEnabled(enabled);
+        void updateDesktopSettings({ wideChatLayoutEnabled: enabled });
+    }, [setWideChatLayoutEnabled]);
+
     const handleShowSplitAssistantMessageActionsChange = React.useCallback((enabled: boolean) => {
         setShowSplitAssistantMessageActions(enabled);
         void updateDesktopSettings({ showSplitAssistantMessageActions: enabled });
@@ -469,6 +492,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         || shouldShow('messageTransport')
         || (shouldShow('activityRenderMode') && chatRenderMode === 'sorted')
         || shouldShow('stickyUserHeader')
+        || shouldShow('wideChatLayout')
         || shouldShow('splitAssistantMessageActions')
         || shouldShow('diffLayout')
         || (shouldShow('mobileStatusBar') && isMobile)
@@ -482,6 +506,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
 
     const showPwaInstallNameSetting = shouldShow('pwaInstallName') && isWebRuntime() && browserTab && !isDesktopShell() && !isVSCode;
     const showPwaOrientationSetting = shouldShow('pwaOrientation') && isWebRuntime() && !isDesktopShell() && !isVSCode;
+    const showMobileKeyboardModeSetting = shouldShow('mobileKeyboardMode') && isWebRuntime() && !isDesktopShell() && !isVSCode && supportsMobileKeyboardResizeContent();
     const [pwaInstallName, setPwaInstallName] = React.useState('');
     const [pwaOrientation, setPwaOrientation] = React.useState<'system' | 'portrait' | 'landscape'>('system');
     const selectedTimeFormatLabel = React.useMemo(() => {
@@ -496,6 +521,10 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         const option = PWA_ORIENTATION_OPTIONS.find((item) => item.id === pwaOrientation);
         return option ? tUnsafe(option.labelKey) : undefined;
     }, [pwaOrientation, tUnsafe]);
+    const selectedMobileKeyboardModeLabel = React.useMemo(() => {
+        const option = MOBILE_KEYBOARD_MODE_OPTIONS.find((item) => item.id === mobileKeyboardMode);
+        return option ? tUnsafe(option.labelKey) : undefined;
+    }, [mobileKeyboardMode, tUnsafe]);
 
     const applyPwaInstallName = React.useCallback(async (value: string) => {
         if (typeof window === 'undefined') {
@@ -539,7 +568,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     }, []);
 
     React.useEffect(() => {
-        if (typeof window === 'undefined' || (!showPwaInstallNameSetting && !showPwaOrientationSetting)) {
+        if (typeof window === 'undefined' || (!showPwaInstallNameSetting && !showPwaOrientationSetting && !showMobileKeyboardModeSetting)) {
             return;
         }
 
@@ -564,6 +593,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                 const raw = typeof settings?.pwaAppName === 'string' ? settings.pwaAppName : '';
                 const normalized = raw.trim().replace(/\s+/g, ' ').slice(0, 64);
                 const orientation = normalizePwaOrientation(settings?.pwaOrientation);
+                const nextMobileKeyboardMode = normalizeMobileKeyboardMode(settings?.mobileKeyboardMode);
 
                 if (!cancelled) {
                     if (showPwaInstallNameSetting) {
@@ -571,6 +601,9 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                     }
                     if (showPwaOrientationSetting) {
                         setPwaOrientation(orientation);
+                    }
+                    if (showMobileKeyboardModeSetting) {
+                        setMobileKeyboardMode(nextMobileKeyboardMode);
                     }
                 }
             } catch {
@@ -581,6 +614,9 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                     if (showPwaOrientationSetting) {
                         setPwaOrientation('system');
                     }
+                    if (showMobileKeyboardModeSetting) {
+                        setMobileKeyboardMode('native');
+                    }
                 }
             }
         };
@@ -590,7 +626,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         return () => {
             cancelled = true;
         };
-    }, [showPwaInstallNameSetting, showPwaOrientationSetting]);
+    }, [setMobileKeyboardMode, showMobileKeyboardModeSetting, showPwaInstallNameSetting, showPwaOrientationSetting]);
 
     return (
         <div className="space-y-8">
@@ -681,7 +717,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                     >
                                         {themesReloading ? t('settings.openchamber.visual.actions.reloadingThemes') : t('settings.openchamber.visual.actions.reloadThemes')}
                                     </button>
-                                    <Tooltip delayDuration={700}>
+                                    <Tooltip>
                                         <TooltipTrigger asChild>
                                             <button
                                                 type="button"
@@ -760,7 +796,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                             </section>
                         )}
 
-                        {(showPwaInstallNameSetting || showPwaOrientationSetting) && (
+                        {(showPwaInstallNameSetting || showPwaOrientationSetting || showMobileKeyboardModeSetting) && (
                             <section className="px-2 pb-2 pt-0 space-y-2">
 
                             {showPwaInstallNameSetting && (
@@ -843,6 +879,52 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                             disabled={pwaOrientation === 'system'}
                                             className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground"
                                             aria-label={t('settings.openchamber.visual.actions.resetInstallOrientationAria')}
+                                            title={t('settings.common.actions.reset')}
+                                        >
+                                            <RiRestartLine className="h-3.5 w-3.5" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {showMobileKeyboardModeSetting && (
+                                <div className="py-1.5 space-y-1.5">
+                                    <div className="flex min-w-0 flex-col">
+                                        <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.mobileKeyboardMode')}</span>
+                                        <span className="typography-meta text-muted-foreground">{t('settings.openchamber.visual.field.mobileKeyboardModeHint')}</span>
+                                    </div>
+                                    <div className="flex w-full max-w-[18rem] items-center gap-2">
+                                        <Select
+                                            value={mobileKeyboardMode}
+                                            onValueChange={(value) => {
+                                                const mode = normalizeMobileKeyboardMode(value);
+                                                setMobileKeyboardMode(mode);
+                                                void updateDesktopSettings({ mobileKeyboardMode: mode });
+                                            }}
+                                        >
+                                            <SelectTrigger aria-label={t('settings.openchamber.visual.field.mobileKeyboardModeAria')} className="w-full">
+                                                <SelectValue placeholder={t('settings.openchamber.visual.field.selectMobileKeyboardModePlaceholder')}>
+                                                    {selectedMobileKeyboardModeLabel}
+                                                </SelectValue>
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {MOBILE_KEYBOARD_MODE_OPTIONS.map((option) => (
+                                                    <SelectItem key={option.id} value={option.id}>
+                                                        {tUnsafe(option.labelKey)}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <Button size="sm"
+                                            type="button"
+                                            variant="ghost"
+                                            onClick={() => {
+                                                setMobileKeyboardMode('native');
+                                                void updateDesktopSettings({ mobileKeyboardMode: 'native' });
+                                            }}
+                                            disabled={mobileKeyboardMode === 'native'}
+                                            className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground"
+                                            aria-label={t('settings.openchamber.visual.actions.resetMobileKeyboardModeAria')}
                                             title={t('settings.common.actions.reset')}
                                         >
                                             <RiRestartLine className="h-3.5 w-3.5" />
@@ -1021,7 +1103,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                     <div className={cn("flex min-w-0 flex-col", isMobile ? "w-full" : "w-56 shrink-0")}>
                                         <div className="flex items-center gap-1.5">
                                             <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.inputBarOffset')}</span>
-                                            <Tooltip delayDuration={1000}>
+                                            <Tooltip>
                                                 <TooltipTrigger asChild>
                                                     <RiInformationLine className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
                                                 </TooltipTrigger>
@@ -1087,7 +1169,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                     />
                                     <div className="flex min-w-0 items-center gap-1.5">
                                         <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.terminalQuickKeys')}</span>
-                                        <Tooltip delayDuration={1000}>
+                                        <Tooltip>
                                             <TooltipTrigger asChild>
                                                 <RiInformationLine className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
                                             </TooltipTrigger>
@@ -1451,7 +1533,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                 </div>
                             )}
 
-                            {(shouldShow('stickyUserHeader') || shouldShow('splitAssistantMessageActions') || (shouldShow('mobileStatusBar') && isMobile) || shouldShow('dotfiles') || shouldShow('queueMode') || shouldShow('persistDraft') || shouldShow('showToolFileIcons') || (!isMobile && shouldShow('inputSpellcheck')) || shouldShow('reasoning')) && (
+                            {(shouldShow('stickyUserHeader') || shouldShow('wideChatLayout') || shouldShow('splitAssistantMessageActions') || (shouldShow('mobileStatusBar') && isMobile) || shouldShow('dotfiles') || shouldShow('queueMode') || shouldShow('persistDraft') || shouldShow('showToolFileIcons') || (!isMobile && shouldShow('inputSpellcheck')) || shouldShow('reasoning')) && (
                                 <section className="p-2 space-y-0.5">
                                     {shouldShow('reasoning') && (
                                         <div
@@ -1499,6 +1581,29 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         </div>
                                     )}
 
+                                    {shouldShow('wideChatLayout') && (
+                                        <div
+                                            className="group flex cursor-pointer items-center gap-2 py-0.5"
+                                            role="button"
+                                            tabIndex={0}
+                                            aria-pressed={wideChatLayoutEnabled}
+                                            onClick={() => handleWideChatLayoutChange(!wideChatLayoutEnabled)}
+                                            onKeyDown={(event) => {
+                                                if (event.key === ' ' || event.key === 'Enter') {
+                                                    event.preventDefault();
+                                                    handleWideChatLayoutChange(!wideChatLayoutEnabled);
+                                                }
+                                            }}
+                                        >
+                                            <Checkbox
+                                                checked={wideChatLayoutEnabled}
+                                                onChange={handleWideChatLayoutChange}
+                                                ariaLabel={t('settings.openchamber.visual.field.wideChatLayoutAria')}
+                                            />
+                                            <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.wideChatLayout')}</span>
+                                        </div>
+                                    )}
+
                                     {shouldShow('splitAssistantMessageActions') && (
                                         <div
                                             className="group flex cursor-pointer items-center gap-2 py-0.5"
@@ -1520,7 +1625,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                             />
                                             <div className="flex min-w-0 items-center gap-1.5">
                                                 <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.showSplitAssistantMessageActions')}</span>
-                                                <Tooltip delayDuration={1000}>
+                                                <Tooltip>
                                                     <TooltipTrigger asChild>
                                                         <RiInformationLine className="h-3.5 w-3.5 cursor-help text-muted-foreground/60" />
                                                     </TooltipTrigger>
@@ -1622,7 +1727,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                             />
                                             <div className="flex min-w-0 items-center gap-1.5">
                                                 <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.queueMessagesByDefault')}</span>
-                                                <Tooltip delayDuration={1000}>
+                                                <Tooltip>
                                                     <TooltipTrigger asChild>
                                                         <RiInformationLine className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
                                                     </TooltipTrigger>

@@ -51,6 +51,7 @@ import type { PermissionRequest } from "@/types/permission"
 import { EMPTY_MESSAGES, EMPTY_PARTS, EMPTY_PERMISSION_REQUESTS, EMPTY_QUESTION_REQUESTS } from "@/constants/empty"
 import type { QuestionRequest } from "@/types/question"
 import * as sessionActions from "./session-actions"
+import { mergeMessages } from "./optimistic"
 
 // ---------------------------------------------------------------------------
 // Context
@@ -171,32 +172,6 @@ function haveEquivalentPartSnapshots(left: HarnessPart[] | undefined, right: Har
       return false
     }
     if (partRepairSignature(leftPart) !== partRepairSignature(rightPart)) {
-      return false
-    }
-  }
-
-  return true
-}
-
-function haveEquivalentMessageSnapshots(left: HarnessMessage[] | undefined, right: HarnessMessage[]): boolean {
-  if (!left) {
-    return right.length === 0
-  }
-
-  if (left.length !== right.length) {
-    return false
-  }
-
-  for (let index = 0; index < left.length; index += 1) {
-    const leftMessage = left[index]
-    const rightMessage = right[index]
-    if (!leftMessage || !rightMessage) {
-      return false
-    }
-    if (leftMessage.id !== rightMessage.id) {
-      return false
-    }
-    if (syncSnapshotSignature(leftMessage) !== syncSnapshotSignature(rightMessage)) {
       return false
     }
   }
@@ -831,14 +806,15 @@ async function resyncDirectoryAfterReconnect(
         }
       }
 
-      const messagesChanged = !haveEquivalentMessageSnapshots(state.message[sessionId], nextMessages)
+      const mergedMessages = mergeMessages(state.message[sessionId] ?? [], nextMessages)
+      const messagesChanged = mergedMessages !== (state.message[sessionId] ?? [])
       if (!sessionChanged && !messagesChanged && !partsChanged) {
         return state
       }
 
       return {
         ...(sessionChanged ? { session: sessions, sessionTotal } : {}),
-        ...(messagesChanged ? { message: { ...state.message, [sessionId]: nextMessages } } : {}),
+        ...(messagesChanged ? { message: { ...state.message, [sessionId]: mergedMessages } } : {}),
         ...(partsChanged ? { part: nextPartState } : {}),
       }
     })
@@ -1265,12 +1241,12 @@ function handleEvent(
     const messageID = getMessageIdFromPayload(payload) ?? undefined
     syncDebug.dispatch.eventNoChange(syncEvent.type, sessionID, messageID)
 
-    // Parts-gap recovery: if a part event was dropped because the parts array
-    // was missing (message not yet inserted or parts lost), trigger a repair
-    // fetch for the session.
-    if (sessionID && messageID && (
-      payload.type === "message.part.delta" || payload.type === "message.part.updated"
-    )) {
+    // Parts-gap recovery: if a delta event was dropped because the parts array
+    // was missing or the partID was not found, trigger a repair fetch for the
+    // session. message.part.updated never needs repair — it only returns false
+    // for intentionally skipped types (step-start, step-finish, patch) or when
+    // preserving an existing finished tool part, neither of which indicates missing data.
+    if (sessionID && messageID && payload.type === "message.part.delta") {
       enqueuePartsRepair(resolvedDirectory, sessionID, childStores)
     }
   }
@@ -2019,10 +1995,14 @@ export function useEnsureSessionMessages(sessionID: string, directory?: string) 
             .sort((a, b) => cmp(a.id, b.id))
         }
 
-        store.setState((state: DirectoryStore) => ({
-          message: { ...state.message, [sessionID]: nextMessages },
-          part: { ...state.part, ...nextPartState },
-        }))
+        store.setState((state: DirectoryStore) => {
+          const currentMessages = state.message[sessionID] ?? []
+          const mergedMessages = mergeMessages(currentMessages, nextMessages)
+          return {
+            message: mergedMessages !== currentMessages ? { ...state.message, [sessionID]: mergedMessages } : state.message,
+            part: { ...state.part, ...nextPartState },
+          }
+        })
       } catch {
         // Transient failure — next navigation or reconnect will retry
       } finally {

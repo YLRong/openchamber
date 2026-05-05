@@ -15,11 +15,24 @@ import type {
 import type { PermissionRequest } from "@/types/permission";
 import type { QuestionRequest } from "@/types/question";
 import { waitForWorktreeBootstrap } from "@/lib/worktrees/worktreeBootstrap";
+import {
+  assertProviderCircuitClosed,
+  recordProviderSuccess,
+  recordProviderError,
+  shouldRetry,
+  getRetryDelayMs,
+} from "./provider-tracker";
 
 // Use relative path by default (works with both dev and nginx proxy server)
 // Can be overridden with VITE_OPENCODE_URL for absolute URLs in special deployments
 const DEFAULT_BASE_URL = import.meta.env.VITE_OPENCODE_URL || "/api";
 const ABSOLUTE_URL_PATTERN = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//;
+
+const isRetryableFetchError = (error: unknown): boolean => {
+  if (error instanceof DOMException && error.name === 'AbortError') return true;
+  if (error instanceof TypeError) return true;
+  return false;
+};
 
 const ensureAbsoluteBaseUrl = (candidate: string): string => {
   const normalized = typeof candidate === "string" && candidate.trim().length > 0 ? candidate.trim() : "/api";
@@ -788,53 +801,76 @@ class OpencodeService {
       });
     }
 
-    try {
-      const base = this.baseUrl.replace(/\/+$/, '');
-      const response = await fetch(`${base}/openchamber/harness/session/${encodeURIComponent(params.id)}/message`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          accept: 'application/json',
-        },
-        body: JSON.stringify({
-          ...(this.currentDirectory ? { directory: this.currentDirectory } : {}),
-          model: {
-            providerID: params.providerID,
-            modelID: params.modelID,
+    assertProviderCircuitClosed(params.providerID);
+
+    const base = this.baseUrl.replace(/\/+$/, '');
+    const url = `${base}/openchamber/harness/session/${encodeURIComponent(params.id)}/message`;
+    let response!: Response;
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            accept: 'application/json',
           },
-          ...(params.agent ? { agent: params.agent } : {}),
-          ...(params.variant ? { variant: params.variant } : {}),
-          ...(params.messageId ? { messageID: params.messageId } : {}),
-          ...(params.format ? { format: params.format } : {}),
-          ...(params.sandboxOverride ? { sandboxOverride: params.sandboxOverride } : {}),
-          parts,
-        }),
-      });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null) as { error?: unknown } | null;
-        const message = typeof payload?.error === 'string' ? payload.error : `Failed to send message (${response.status})`;
-        throw new Error(message);
-      }
-    } catch (error) {
-      const detail = (() => {
-        if (error && typeof error === 'object') {
-          const data = 'data' in error ? error.data : undefined;
-          if (typeof data === 'string' && data.trim()) {
-            return data.trim();
-          }
-          if (Array.isArray((error as { error?: unknown }).error)) {
-            return JSON.stringify((error as { error?: unknown }).error);
-          }
+          body: JSON.stringify({
+            ...(this.currentDirectory ? { directory: this.currentDirectory } : {}),
+            model: {
+              providerID: params.providerID,
+              modelID: params.modelID,
+            },
+            ...(params.agent ? { agent: params.agent } : {}),
+            ...(params.variant ? { variant: params.variant } : {}),
+            ...(params.messageId ? { messageID: params.messageId } : {}),
+            ...(params.format ? { format: params.format } : {}),
+            ...(params.sandboxOverride ? { sandboxOverride: params.sandboxOverride } : {}),
+            parts,
+          }),
+        });
+      } catch (error) {
+        if (attempt < 2 && isRetryableFetchError(error)) {
+          const delay = getRetryDelayMs(attempt);
+          console.warn(
+            `[prompt] fetch failed for ${params.providerID}/${params.modelID} (attempt ${attempt + 1}/3), retrying in ${delay}ms`,
+            (error as Error)?.message
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
         }
-        return error instanceof Error ? error.message : String(error);
-      })();
-      throw new Error(`Failed to send message: ${detail}`);
-    }
+        recordProviderError(params.providerID);
+        throw error;
+      }
 
-    // Return temporary ID for optimistic UI
-    // Real messageID will come from server via SSE events
-    return tempMessageId;
+      if (response.ok) {
+        recordProviderSuccess(params.providerID);
+        return tempMessageId;
+      }
+
+      if (shouldRetry(params.providerID, response.status, attempt)) {
+        const delay = getRetryDelayMs(attempt);
+        console.warn(
+          `[prompt] ${response.status} for ${params.providerID}/${params.modelID} (attempt ${attempt + 1}/3), retrying in ${delay}ms`
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+
+      let detail = '';
+      try {
+        detail = await response.text();
+      } catch {
+        // ignore
+      }
+      const suffix = detail && detail.trim().length > 0 ? `: ${detail.trim()}` : '';
+      const error = new Error(`Failed to send message (${response.status})${suffix}`);
+      recordProviderError(params.providerID, response.status);
+      throw error;
+    }
+    // Defensive fallback — all loop paths return/throw, but TypeScript
+    // control flow analysis cannot prove exhaustiveness without this.
+    throw new Error('Failed to send message after retries');
   }
 
   async sendCommand(params: {

@@ -95,6 +95,27 @@ const resolveWorkspacePathFromContext = async ({ req, targetPath, resolveProject
   });
 };
 
+const resolveReadPathFromContext = async ({ req, targetPath, resolveProjectDirectory, path, os, normalizeDirectoryPath, openchamberUserConfigRoot }) => {
+  if (req.query?.allowOutsideWorkspace === 'true') {
+    const normalized = normalizeDirectoryPath(targetPath);
+    if (!normalized || typeof normalized !== 'string') {
+      return { ok: false, error: 'Path is required' };
+    }
+    const resolved = path.resolve(normalized);
+    return { ok: true, base: path.dirname(resolved), resolved };
+  }
+
+  return resolveWorkspacePathFromContext({
+    req,
+    targetPath,
+    resolveProjectDirectory,
+    path,
+    os,
+    normalizeDirectoryPath,
+    openchamberUserConfigRoot,
+  });
+};
+
 const runCommandInDirectory = ({ shell, shellFlag, command, resolvedCwd, spawn, buildAugmentedPath, commandTimeoutMs }) => {
   return new Promise((resolve) => {
     let stdout = '';
@@ -290,7 +311,7 @@ export const registerFsRoutes = (app, dependencies) => {
     }
 
     try {
-      const resolved = await resolveWorkspacePathFromContext({
+      const resolved = await resolveReadPathFromContext({
         req,
         targetPath: filePath,
         resolveProjectDirectory,
@@ -334,12 +355,13 @@ export const registerFsRoutes = (app, dependencies) => {
   app.get('/api/fs/read', async (req, res) => {
     const filePath = typeof req.query.path === 'string' ? req.query.path.trim() : '';
     const allowMissing = req.query.allowMissing === 'true';
+    const optional = req.query.optional === 'true';
     if (!filePath) {
       return res.status(400).json({ error: 'Path is required' });
     }
 
     try {
-      const resolved = await resolveWorkspacePathFromContext({
+      const resolved = await resolveReadPathFromContext({
         req,
         targetPath: filePath,
         resolveProjectDirectory,
@@ -374,6 +396,9 @@ export const registerFsRoutes = (app, dependencies) => {
         if (allowMissing) {
           return res.status(204).end();
         }
+        if (optional) {
+          return res.type('text/plain').send('');
+        }
         return res.status(404).json({ error: 'File not found' });
       }
       if (err && typeof err === 'object' && err.code === 'EACCES') {
@@ -391,7 +416,7 @@ export const registerFsRoutes = (app, dependencies) => {
     }
 
     try {
-      const resolved = await resolveWorkspacePathFromContext({
+      const resolved = await resolveReadPathFromContext({
         req,
         targetPath: filePath,
         resolveProjectDirectory,

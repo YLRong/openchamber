@@ -7,6 +7,7 @@ import { setDirectoryShowHidden } from '@/lib/directoryShowHidden';
 import { setFilesViewShowGitignored } from '@/lib/filesViewShowGitignored';
 import { loadAppearancePreferences, applyAppearancePreferences } from '@/lib/appearancePersistence';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
+import { normalizeMobileKeyboardMode, setStoredMobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 
 const persistToLocalStorage = (settings: DesktopSettings) => {
   if (typeof window === 'undefined') {
@@ -91,6 +92,9 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
     } else {
       localStorage.removeItem('openchamber.pwaName');
     }
+  }
+  if (typeof settings.mobileKeyboardMode === 'string') {
+    setStoredMobileKeyboardMode(settings.mobileKeyboardMode);
   }
 };
 
@@ -431,6 +435,9 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
   if (typeof settings.stickyUserHeader === 'boolean' && settings.stickyUserHeader !== store.stickyUserHeader) {
     store.setStickyUserHeader(settings.stickyUserHeader);
   }
+  if (typeof settings.wideChatLayoutEnabled === 'boolean' && settings.wideChatLayoutEnabled !== store.wideChatLayoutEnabled) {
+    store.setWideChatLayoutEnabled(settings.wideChatLayoutEnabled);
+  }
   if (
     typeof settings.showSplitAssistantMessageActions === 'boolean'
     && settings.showSplitAssistantMessageActions !== store.showSplitAssistantMessageActions
@@ -460,6 +467,12 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
   }
   if (typeof settings.inputBarOffset === 'number' && Number.isFinite(settings.inputBarOffset) && settings.inputBarOffset !== store.inputBarOffset) {
     store.setInputBarOffset(settings.inputBarOffset);
+  }
+  if (typeof settings.mobileKeyboardMode === 'string') {
+    const mode = normalizeMobileKeyboardMode(settings.mobileKeyboardMode, store.mobileKeyboardMode);
+    if (mode !== store.mobileKeyboardMode) {
+      store.setMobileKeyboardMode(mode);
+    }
   }
 
   if (Array.isArray(settings.favoriteModels)) {
@@ -859,6 +872,9 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   if (typeof candidate.stickyUserHeader === 'boolean') {
     result.stickyUserHeader = candidate.stickyUserHeader;
   }
+  if (typeof candidate.wideChatLayoutEnabled === 'boolean') {
+    result.wideChatLayoutEnabled = candidate.wideChatLayoutEnabled;
+  }
   if (typeof candidate.showSplitAssistantMessageActions === 'boolean') {
     result.showSplitAssistantMessageActions = candidate.showSplitAssistantMessageActions;
   }
@@ -882,6 +898,12 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   }
   if (typeof candidate.inputBarOffset === 'number' && Number.isFinite(candidate.inputBarOffset)) {
     result.inputBarOffset = candidate.inputBarOffset;
+  }
+  if (typeof candidate.mobileKeyboardMode === 'string') {
+    const mode = normalizeMobileKeyboardMode(candidate.mobileKeyboardMode, undefined);
+    if (mode) {
+      result.mobileKeyboardMode = mode;
+    }
   }
 
   const favoriteModels = sanitizeModelRefs(candidate.favoriteModels, 64);
@@ -934,6 +956,29 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
 
   if (typeof candidate.reportUsage === 'boolean') {
     result.reportUsage = candidate.reportUsage;
+  }
+
+  if (typeof candidate.globalBehaviorPrompt === 'string') {
+    result.globalBehaviorPrompt = candidate.globalBehaviorPrompt;
+  }
+  if (typeof candidate.responseStyleEnabled === 'boolean') {
+    result.responseStyleEnabled = candidate.responseStyleEnabled;
+  }
+  if (
+    typeof candidate.responseStylePreset === 'string'
+    && (candidate.responseStylePreset === 'concise'
+      || candidate.responseStylePreset === 'detailed'
+      || candidate.responseStylePreset === 'mentor'
+      || candidate.responseStylePreset === 'pushback'
+      || candidate.responseStylePreset === 'noFiller'
+      || candidate.responseStylePreset === 'matchEnergy'
+      || candidate.responseStylePreset === 'warmPeer'
+      || candidate.responseStylePreset === 'custom')
+  ) {
+    result.responseStylePreset = candidate.responseStylePreset;
+  }
+  if (typeof candidate.responseStyleCustomInstructions === 'string') {
+    result.responseStyleCustomInstructions = candidate.responseStyleCustomInstructions;
   }
 
   return result;

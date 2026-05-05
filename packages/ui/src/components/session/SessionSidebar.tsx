@@ -4,6 +4,7 @@ import { RiLayoutLeftLine } from '@remixicon/react';
 import { toast } from '@/components/ui';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useI18n } from '@/lib/i18n';
+import { useDeviceInfo, useTabletStandalonePwaRuntime } from '@/lib/device';
 import { isDesktopShell } from '@/lib/desktop';
 import { isDesktopWindowFullscreen as getDesktopWindowFullscreen, onDesktopWindowResized, startDesktopWindowDrag } from '@/lib/desktopNative';
 import { sessionEvents } from '@/lib/sessionEvents';
@@ -59,6 +60,7 @@ import {
 } from './sidebar/ConfirmDialogs';
 import { BulkActionBar } from './sidebar/BulkActionBar';
 import { useSessionMultiSelectStore } from '@/stores/useSessionMultiSelectStore';
+import { useSessionDisplayStore } from '@/stores/useSessionDisplayStore';
 import { type SessionGroup, type SessionNode } from './sidebar/types';
 import {
   type ActiveNowEntry,
@@ -138,6 +140,8 @@ const isKnownActiveSessionDirectory = (session: Session, knownDirectories: Set<s
   return knownDirectories.has(directory);
 };
 
+const SIDEBAR_PR_NO_PR_RETRY_MS = 5 * 60_000;
+
 interface SessionSidebarProps {
   mobileVariant?: boolean;
   onSessionSelected?: (sessionId: string) => void;
@@ -158,6 +162,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const [sessionSearchQuery, setSessionSearchQuery] = React.useState('');
   const sessionSearchContainerRef = React.useRef<HTMLDivElement | null>(null);
   const sessionSearchInputRef = React.useRef<HTMLInputElement | null>(null);
+  const retriedNoPrStatusKeysRef = React.useRef<Set<string>>(new Set());
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [editTitle, setEditTitle] = React.useState('');
   const [editingProjectDialogId, setEditingProjectDialogId] = React.useState<string | null>(null);
@@ -459,9 +464,12 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   }, []);
 
   const isDesktopShellRuntime = React.useMemo(() => isDesktopShell(), []);
+  const isTabletStandalonePwa = useTabletStandalonePwaRuntime();
   const [isDesktopWindowFullscreen, setIsDesktopWindowFullscreen] = React.useState(false);
 
   const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
+  const { isTablet } = useDeviceInfo();
+  const alwaysShowSidebarActions = mobileVariant || isTablet;
   const isMacPlatform = React.useMemo(() => {
     if (typeof navigator === 'undefined') {
       return false;
@@ -470,7 +478,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   }, []);
   const isWebRuntime = !mobileVariant && !isVSCode && !isDesktopShellRuntime;
   const showDesktopSidebarChrome = !mobileVariant && !isVSCode && !isWebRuntime;
-  const desktopSidebarTopPaddingClass = isDesktopShellRuntime && isMacPlatform && !isDesktopWindowFullscreen ? 'pl-[5.5rem]' : 'pl-3';
+  const desktopSidebarTopPaddingClass = (isDesktopShellRuntime && isMacPlatform && !isDesktopWindowFullscreen) || isTabletStandalonePwa ? 'pl-[5.5rem]' : 'pl-3';
   const desktopSidebarToggleButtonClass = 'app-region-no-drag inline-flex h-8 w-8 items-center justify-center rounded-md typography-ui-label font-medium text-foreground transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50';
 
   React.useEffect(() => {
@@ -1022,18 +1030,27 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     return meta;
   }, [projectSections, homeDirectory]);
 
-  const activeNowSessions = React.useMemo(
-    () => deriveActiveNowSessions(activeNowEntries, new Map(sessions.map((session) => [session.id, session]))),
-    [activeNowEntries, sessions],
-  );
+  const showRecentSection = useSessionDisplayStore((state) => state.showRecentSection);
 
-  const liveActiveSessions = React.useMemo(
-    () => deriveLiveActiveNowSessions(sessions, liveSessionStatuses),
-    [liveSessionStatuses, sessions],
-  );
+  const activeNowSessions = React.useMemo(() => {
+    if (!showRecentSection) {
+      return [];
+    }
+
+    return deriveActiveNowSessions(activeNowEntries, new Map(sessions.map((session) => [session.id, session])))
+      .sort((a, b) => compareSessionsByPinnedAndTime(a, b, pinnedSessionIds));
+  }, [activeNowEntries, pinnedSessionIds, sessions, showRecentSection]);
+
+  const liveActiveSessions = React.useMemo(() => {
+    if (!showRecentSection) {
+      return [];
+    }
+
+    return deriveLiveActiveNowSessions(sessions, liveSessionStatuses);
+  }, [liveSessionStatuses, sessions, showRecentSection]);
 
   React.useEffect(() => {
-    if (liveActiveSessions.length === 0) {
+    if (!showRecentSection || liveActiveSessions.length === 0) {
       return;
     }
 
@@ -1045,9 +1062,13 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       persistActiveNowEntries(safeStorage, next);
       return next;
     });
-  }, [liveActiveSessions, safeStorage]);
+  }, [liveActiveSessions, safeStorage, showRecentSection]);
 
   React.useEffect(() => {
+    if (!showRecentSection) {
+      return;
+    }
+
     const allKnownSessionsById = new Map<string, Session>();
     [...sessions, ...archivedSessions].forEach((session) => {
       allKnownSessionsById.set(session.id, session);
@@ -1060,11 +1081,15 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 
     setActiveNowEntries(pruned);
     persistActiveNowEntries(safeStorage, pruned);
-  }, [activeNowEntries, archivedSessions, safeStorage, sessions]);
+  }, [activeNowEntries, archivedSessions, safeStorage, sessions, showRecentSection]);
 
   // Prefetch is wired below, after recentSessionIds is computed.
 
   const activitySections = React.useMemo(() => {
+    if (!showRecentSection) {
+      return [];
+    }
+
     const toItem = (session: Session) => {
       const existing = sessionSidebarMetaById.get(session.id);
       const sessionDirectory = normalizePath((session as Session & { directory?: string | null }).directory ?? null);
@@ -1079,11 +1104,11 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     return [
       { key: 'active-now' as const, title: t('sessions.sidebar.activity.recentTitle'), items: activeNowSessions.map(toItem) },
     ];
-  }, [activeNowSessions, sessionSidebarMetaById, t]);
+  }, [activeNowSessions, sessionSidebarMetaById, showRecentSection, t]);
 
   const recentSessionIds = React.useMemo(() => {
-    return new Set(activitySections.flatMap((section) => section.items.map((item) => item.node.session.id)));
-  }, [activitySections]);
+    return new Set(activeNowSessions.map((session) => session.id));
+  }, [activeNowSessions]);
 
   const recentSessionIdsList = React.useMemo(() => [...recentSessionIds], [recentSessionIds]);
 
@@ -1162,6 +1187,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     }
 
     const missingTargets: Array<{ directory: string; branch: string; remoteName?: string | null }> = [];
+    const now = Date.now();
 
     sectionsForSidebarRender.forEach((section) => {
       if (collapsedProjects.has(section.project.id)) {
@@ -1176,7 +1202,22 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         }
         const key = getGitHubPrStatusKey(directory, branch);
         const entry = useGitHubPrStatusStore.getState().entries[key];
-        if (!entry || !entry.isInitialStatusResolved) {
+        const hasPr = Boolean(entry?.status?.pr);
+        const retryKey = `${directory}::${branch}`;
+        const noPrLastCheckedAt = Math.max(entry?.lastRefreshAt ?? 0, entry?.lastDiscoveryPollAt ?? 0);
+        const shouldRetryNoPr = Boolean(
+          entry?.isInitialStatusResolved
+          && !hasPr
+          && (
+            !retriedNoPrStatusKeysRef.current.has(retryKey)
+            || now - noPrLastCheckedAt >= SIDEBAR_PR_NO_PR_RETRY_MS
+          ),
+        );
+
+        if (!entry || !entry.isInitialStatusResolved || shouldRetryNoPr) {
+          if (shouldRetryNoPr) {
+            retriedNoPrStatusKeysRef.current.add(retryKey);
+          }
           missingTargets.push({ directory, branch });
         }
       });
@@ -1285,6 +1326,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         openContextPanelTab={openContextPanelTab}
         handleDeleteSession={handleDeleteSession}
         mobileVariant={mobileVariant}
+        alwaysShowActions={alwaysShowSidebarActions}
         renderSessionNode={renderSessionNode}
         secondaryMeta={secondaryMeta}
         renderContext={renderContext}
@@ -1323,6 +1365,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       openContextPanelTab,
       handleDeleteSession,
       mobileVariant,
+      alwaysShowSidebarActions,
     ],
   );
 
@@ -1382,6 +1425,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         lastRepoStatus={lastRepoStatusRef.current}
         toggleGroupSessionLimit={toggleGroupSessionLimit}
         mobileVariant={mobileVariant}
+        alwaysShowActions={alwaysShowSidebarActions}
         activeProjectId={activeProjectId}
         setActiveProjectIdOnly={setActiveProjectIdOnly}
         setActiveMainTab={setActiveMainTab}
@@ -1417,6 +1461,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       projectRepoStatus,
       toggleGroupSessionLimit,
       mobileVariant,
+      alwaysShowSidebarActions,
       activeProjectId,
       setActiveProjectIdOnly,
       setActiveMainTab,
@@ -1433,7 +1478,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     ],
   );
 
-  const topContent = !hasSessionSearchQuery ? (
+  const topContent = showRecentSection && !hasSessionSearchQuery ? (
     <SidebarActivitySections
       sections={activitySections}
       renderSessionNode={renderSessionNode}
@@ -1677,6 +1722,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         onToggleSelectionMode={handleToggleSelectionMode}
         showSidebarToggle={isWebRuntime}
         onToggleSidebar={toggleSidebar}
+        avoidWindowControlsOverlay={isTabletStandalonePwa}
       />
 
       <SidebarProjectsList
@@ -1696,6 +1742,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         isDesktopShellRuntime={isDesktopShellRuntime}
         stuckProjectHeaders={stuckProjectHeaders}
         mobileVariant={mobileVariant}
+        alwaysShowActions={alwaysShowSidebarActions}
         toggleProject={toggleProject}
         setActiveProjectIdOnly={setActiveProjectIdOnly}
         setActiveMainTab={setActiveMainTab}

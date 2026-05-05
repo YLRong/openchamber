@@ -1,4 +1,5 @@
 import type { ProjectEntry } from '@/lib/api/types';
+import type { MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 
 export type AssistantNotificationPayload = {
   title?: string;
@@ -122,6 +123,7 @@ export type DesktopSettings = {
   gitModelId?: string;
   pwaAppName?: string;
   pwaOrientation?: 'system' | 'portrait' | 'landscape';
+  mobileKeyboardMode?: MobileKeyboardMode;
   inputSpellcheckEnabled?: boolean;
   showToolFileIcons?: boolean;
   showExpandedBashTools?: boolean;
@@ -134,6 +136,7 @@ export type DesktopSettings = {
   mermaidRenderingMode?: 'svg' | 'ascii';
   userMessageRenderingMode?: 'markdown' | 'plain';
   stickyUserHeader?: boolean;
+  wideChatLayoutEnabled?: boolean;
   showSplitAssistantMessageActions?: boolean;
   fontSize?: number;
   terminalFontSize?: number;
@@ -158,6 +161,12 @@ export type DesktopSettings = {
   skillCatalogs?: SkillCatalogConfig[];
   // Opt-in to send anonymous usage reports for update checks (default: true)
   reportUsage?: boolean;
+
+  // Global behavior prompt — synced to ~/.config/opencode/AGENTS.md
+  globalBehaviorPrompt?: string;
+  responseStyleEnabled?: boolean;
+  responseStylePreset?: 'concise' | 'detailed' | 'mentor' | 'pushback' | 'noFiller' | 'matchEnergy' | 'warmPeer' | 'custom';
+  responseStyleCustomInstructions?: string;
 };
 
 type TauriGlobal = {

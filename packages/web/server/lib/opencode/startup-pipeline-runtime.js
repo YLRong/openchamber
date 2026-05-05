@@ -24,6 +24,7 @@ export const createStartupPipelineRuntime = (dependencies) => {
       processForwardedEventPayload,
       messageStreamWsClients,
       triggerHealthCheck,
+      upstreamStallTimeoutMs,
       terminalHeartbeatIntervalMs,
       terminalRebindWindowMs,
       terminalMaxRebindsPerWindow,
@@ -88,6 +89,7 @@ export const createStartupPipelineRuntime = (dependencies) => {
       processForwardedEventPayload,
       wsClients: messageStreamWsClients,
       triggerHealthCheck,
+      upstreamStallTimeoutMs,
     });
 
     // Always register proxy routes (they handle session merging for all backends),

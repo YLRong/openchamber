@@ -14,7 +14,7 @@ import { FadeInOnReveal } from './FadeInOnReveal';
 import { Button } from '@/components/ui/button';
 import { SaveProjectPlanDialog } from '@/components/session/SaveProjectPlanDialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { RiCheckLine, RiFileCopyLine, RiChatNewLine, RiArrowGoBackLine, RiGitBranchLine, RiHourglassLine, RiTimeLine, RiVolumeUpLine, RiStopLine, RiImageDownloadLine, RiLoader4Line, RiErrorWarningLine, RiBookletLine } from '@remixicon/react';
+import { RiCheckLine, RiFileCopyLine, RiChatNewLine, RiArrowGoBackLine, RiGitBranchLine, RiHourglassLine, RiTimeLine, RiVolumeUpLine, RiStopLine, RiImageDownloadLine, RiLoader4Line, RiErrorWarningLine, RiBookletLine, RiGlobalLine, RiInformationLine } from '@remixicon/react';
 import { ArrowsMerge } from '@/components/icons/ArrowsMerge';
 import type { ContentChangeReason } from '@/hooks/useChatScrollManager';
 import type { RenderablePart, RenderableToolPart } from './renderable';
@@ -43,6 +43,7 @@ import { resolveProjectForSessionDirectory } from '@/lib/projectResolution';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useSessions } from '@/sync/sync-context';
 import { useI18n } from '@/lib/i18n';
+import { extractLoopbackUrls } from '@/lib/url';
 
 const CONTAIN_LAYOUT_STYLE = { contain: 'layout' as const, transform: 'translateZ(0)' };
 const MESSAGE_FOOTER_CONTAINER_STYLE = { containerType: 'inline-size' as const, containerName: 'message-footer' };
@@ -281,6 +282,7 @@ interface MessageBodyProps {
     syntaxTheme: { [key: string]: React.CSSProperties };
 
     isMobile: boolean;
+    alwaysShowActions?: boolean;
     hasTouchInput?: boolean;
     copiedCode: string | null;
     onCopyCode: (code: string) => void;
@@ -302,6 +304,7 @@ interface MessageBodyProps {
     onRevert?: () => void;
     onFork?: () => void;
     errorMessage?: string;
+    errorVariant?: 'error' | 'info';
     userActionsMode?: 'inline' | 'external-content' | 'external-actions';
     stickyUserHeaderEnabled?: boolean;
 }
@@ -324,10 +327,11 @@ const writeRevealedToolIds = (messageId: string, value: Set<string>): void => {
     revealedToolIdsByMessage.set(messageId, new Set(value));
 };
 
-const UserMessageBody = React.memo(({ messageId, parts, isMobile, hasTouchInput, hasTextContent, onCopyMessage, copiedMessage, onShowPopup, agentMention, onRevert, onFork, userActionsMode = 'inline', stickyUserHeaderEnabled = true }: {
+const UserMessageBody = React.memo(({ messageId, parts, isMobile, alwaysShowActions = isMobile, hasTouchInput, hasTextContent, onCopyMessage, copiedMessage, onShowPopup, agentMention, onRevert, onFork, userActionsMode = 'inline', stickyUserHeaderEnabled = true }: {
     messageId: string;
     parts: RenderablePart[];
     isMobile: boolean;
+    alwaysShowActions?: boolean;
     hasTouchInput?: boolean;
     hasTextContent?: boolean;
     onCopyMessage?: () => void;
@@ -436,13 +440,13 @@ const UserMessageBody = React.memo(({ messageId, parts, isMobile, hasTouchInput,
                         : userActionsMode === 'inline'
                             ? 'translate-x-5'
                             : 'translate-x-0',
-                    isMobile
+                    alwaysShowActions
                         ? 'pointer-events-auto opacity-100'
                         : 'pointer-events-none opacity-0 transition-opacity duration-150 group-hover/message:pointer-events-auto group-hover/message:opacity-100 group-hover/user-actions:pointer-events-auto group-hover/user-actions:opacity-100 group-hover/user-shell:pointer-events-auto group-hover/user-shell:opacity-100'
                 )}
             >
                 {onRevert && (
-                <Tooltip delayDuration={1000}>
+                <Tooltip>
                     <TooltipTrigger asChild>
                         <Button
                                 type="button"
@@ -463,7 +467,7 @@ const UserMessageBody = React.memo(({ messageId, parts, isMobile, hasTouchInput,
                     </Tooltip>
                 )}
                 {onFork && (
-                    <Tooltip delayDuration={1000}>
+                    <Tooltip>
                         <TooltipTrigger asChild>
                             <Button
                                 type="button"
@@ -484,7 +488,7 @@ const UserMessageBody = React.memo(({ messageId, parts, isMobile, hasTouchInput,
                     </Tooltip>
                 )}
                 {canCopyMessage && hasCopyableText && (
-                    <Tooltip delayDuration={1000}>
+                    <Tooltip>
                         <TooltipTrigger asChild>
                             <Button
                                 type="button"
@@ -732,7 +736,7 @@ const AssistantMessageActionButtons = React.memo(({
     return (
         <>
             {onCopyMessage && (
-                <Tooltip delayDuration={1000}>
+                <Tooltip>
                     <TooltipTrigger asChild>
                         <Button
                             type="button"
@@ -771,7 +775,7 @@ const AssistantMessageActionButtons = React.memo(({
                     <TooltipContent sideOffset={6}>{t('chat.messageBody.actions.copyAnswer')}</TooltipContent>
                 </Tooltip>
             )}
-            <Tooltip delayDuration={1000}>
+            <Tooltip>
                 <TooltipTrigger asChild>
                     <Button
                         type="button"
@@ -797,7 +801,7 @@ const AssistantMessageActionButtons = React.memo(({
                 <TooltipContent sideOffset={6}>{isSharing ? t('chat.messageBody.actions.savingImage') : t('chat.messageBody.actions.saveAsImage')}</TooltipContent>
             </Tooltip>
             {showMessageTTSButtons && hasCopyableText && (
-                <Tooltip delayDuration={1000}>
+                <Tooltip>
                     <TooltipTrigger asChild>
                         <Button
                             type="button"
@@ -836,6 +840,7 @@ const AssistantMessageBody = React.memo(({
 
     syntaxTheme,
     isMobile,
+    alwaysShowActions,
     hasTouchInput,
     expandedTools,
     onToggleTool,
@@ -849,6 +854,7 @@ const AssistantMessageBody = React.memo(({
     showReasoningTraces = false,
     turnGroupingContext,
     errorMessage,
+    errorVariant = 'error',
 }: Omit<MessageBodyProps, 'isUser'>) => {
     const { t } = useI18n();
     const streamPhase = _streamPhase;
@@ -862,6 +868,7 @@ const AssistantMessageBody = React.memo(({
     }, []);
 
     const isTouchContext = Boolean(hasTouchInput ?? isMobile);
+    const alwaysShowMessageActions = Boolean(alwaysShowActions ?? isMobile);
     const awaitingMessageCompletion = !isMessageCompleted;
     const animateActivityRows = awaitingMessageCompletion || Boolean(turnGroupingContext?.isWorking);
 
@@ -959,6 +966,36 @@ const AssistantMessageBody = React.memo(({
     }, [visibleParts]);
     const assistantPlanText = React.useMemo(() => flattenAssistantTextParts(assistantTextParts), [assistantTextParts]);
     const suggestedPlanTitle = React.useMemo(() => suggestPlanTitleFromText(assistantPlanText), [assistantPlanText]);
+
+    const openContextPreview = useUIStore((state) => state.openContextPreview);
+
+    const messagePreviewUrl = React.useMemo(() => {
+        for (const part of assistantTextParts) {
+            const text = (part as { text?: unknown }).text;
+            if (typeof text !== 'string' || text.length === 0) {
+                continue;
+            }
+            const url = extractLoopbackUrls(text)[0];
+            if (!url) {
+                continue;
+            }
+            return url.includes('0.0.0.0') ? url.replace('0.0.0.0', '127.0.0.1') : url;
+        }
+        for (const part of toolParts) {
+            const state = (part as unknown as { state?: unknown }).state as Record<string, unknown> | undefined;
+            const output = state && typeof state.output === 'string' ? state.output : null;
+            if (!output) {
+                continue;
+            }
+            // eslint-disable-next-line no-control-regex
+            const url = extractLoopbackUrls(output.replace(/\x1b\[[0-9;]*m/g, ''))[0];
+            if (!url) {
+                continue;
+            }
+            return url.includes('0.0.0.0') ? url.replace('0.0.0.0', '127.0.0.1') : url;
+        }
+        return null;
+    }, [assistantTextParts, toolParts]);
 
     const createSessionFromAssistantMessage = useSessionUIStore((state) => state.createSessionFromAssistantMessage);
     const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
@@ -1355,6 +1392,7 @@ const AssistantMessageBody = React.memo(({
 
     const shouldDeferSortedInlineText = isSortedRenderMode && !hasStopFinish;
     const showErrorMessage = Boolean(errorMessage);
+    const ErrorIcon = errorVariant === 'info' ? RiInformationLine : RiErrorWarningLine;
     const shouldShowMessageActions = hasCopyableText;
     const shouldShowTurnFooter = isLastAssistantInTurn && hasTextContent && (hasStopFinish || Boolean(errorMessage));
     const shouldRenderActionsInActivity = isSortedRenderMode;
@@ -1516,6 +1554,7 @@ const AssistantMessageBody = React.memo(({
                                 part={part}
                                 messageId={messageId}
                                 onContentChange={onContentChange}
+                                alwaysShowActions={alwaysShowMessageActions}
                             />
                         );
                     } else {
@@ -1568,6 +1607,7 @@ const AssistantMessageBody = React.memo(({
                                     onToggle={onToggleTool}
                                     syntaxTheme={syntaxTheme}
                                     isMobile={isMobile}
+                                    alwaysShowActions={alwaysShowMessageActions}
                                     onContentChange={onContentChange}
                                     onShowPopup={onShowPopup}
                                     animateTailText={animatedToolIdsLookup.has(toolPart.id)}
@@ -1612,6 +1652,7 @@ const AssistantMessageBody = React.memo(({
     }, [
         activityByPart,
         activityGroupSegmentsForMessage,
+        alwaysShowMessageActions,
         animatedToolIdsLookup,
         animateActivityRows,
         chatRenderMode,
@@ -1659,11 +1700,38 @@ const AssistantMessageBody = React.memo(({
     }, [messageCompletedAt, messageCreatedAt]);
 
     const footerTimestampClassName = 'text-sm text-muted-foreground/60 tabular-nums flex items-center gap-1';
+    const isVSCode = isVSCodeRuntime();
+    const canOpenMessagePreview = !isMobile && !isVSCode;
 
     const finalTurnActionButtons = (
         <>
-            {!isVSCodeRuntime() ? (
-                <Tooltip delayDuration={1000}>
+            {canOpenMessagePreview && messagePreviewUrl ? (
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground bg-transparent hover:text-foreground hover:!bg-transparent active:!bg-transparent focus-visible:!bg-transparent focus-visible:ring-2 focus-visible:ring-primary/50"
+                            aria-label={t('chat.messageBody.actions.openPreviewAria')}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={() => {
+                                const directory = effectiveDirectory
+                                    ?? (typeof currentSession?.directory === 'string' ? currentSession.directory : null);
+                                if (!directory) {
+                                    return;
+                                }
+                                openContextPreview(directory, messagePreviewUrl);
+                            }}
+                        >
+                            <RiGlobalLine className="h-4 w-4" />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent sideOffset={6}>{t('chat.messageBody.actions.openPreview')}</TooltipContent>
+                </Tooltip>
+            ) : null}
+            {!isVSCode ? (
+                <Tooltip>
                     <TooltipTrigger asChild>
                         <Button
                             type="button"
@@ -1683,7 +1751,7 @@ const AssistantMessageBody = React.memo(({
                     <TooltipContent sideOffset={6}>{t('chat.messageBody.actions.saveAsPlan')}</TooltipContent>
                 </Tooltip>
             ) : null}
-            <Tooltip delayDuration={1000}>
+            <Tooltip>
                 <TooltipTrigger asChild>
                     <Button
                         type="button"
@@ -1698,21 +1766,23 @@ const AssistantMessageBody = React.memo(({
                 </TooltipTrigger>
                 <TooltipContent sideOffset={6}>{t('chat.messageBody.actions.startNewSession')}</TooltipContent>
             </Tooltip>
-            <Tooltip delayDuration={1000}>
-                <TooltipTrigger asChild>
-                    <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8 text-muted-foreground bg-transparent hover:text-foreground hover:!bg-transparent active:!bg-transparent focus-visible:!bg-transparent focus-visible:ring-2 focus-visible:ring-primary/50"
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={handleForkMultiRunClick}
-                    >
-                        <ArrowsMerge className="h-4 w-4" />
-                    </Button>
-                </TooltipTrigger>
-                <TooltipContent sideOffset={6}>{t('chat.messageBody.actions.startNewMultiRun')}</TooltipContent>
-            </Tooltip>
+            {!isVSCode ? (
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 text-muted-foreground bg-transparent hover:text-foreground hover:!bg-transparent active:!bg-transparent focus-visible:!bg-transparent focus-visible:ring-2 focus-visible:ring-primary/50"
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={handleForkMultiRunClick}
+                        >
+                            <ArrowsMerge className="h-4 w-4" />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent sideOffset={6}>{t('chat.messageBody.actions.startNewMultiRun')}</TooltipContent>
+                </Tooltip>
+            ) : null}
         </>
     );
  
@@ -1742,11 +1812,23 @@ const AssistantMessageBody = React.memo(({
                     {renderedParts}
                     {showErrorMessage && (
                         <FadeInOnReveal key="assistant-error">
-                            <div className="group/assistant-text relative mt-3 p-3 rounded-lg border bg-[var(--status-error-background)] border-[var(--status-error-border)] break-all max-w-full">
-                                <div className="flex items-start gap-2">
-                                    <RiErrorWarningLine className="h-4 w-4 shrink-0 mt-0.5 text-[var(--status-error)]" />
-                                    <div className="break-all min-w-0 flex-1">
-                                        <SimpleMarkdownRenderer content={errorMessage ?? ''} onShowPopup={onShowPopup} />
+                            <div className={cn(
+                                'group/assistant-text relative mt-3 p-3 rounded-lg border break-words max-w-full',
+                                errorVariant === 'info'
+                                    ? 'bg-[var(--status-info-background)] border-[var(--status-info-border)]'
+                                    : 'bg-[var(--status-error-background)] border-[var(--status-error-border)]',
+                            )}>
+                                <div className="flex items-center gap-2">
+                                    <ErrorIcon className={cn(
+                                        'h-4 w-4 shrink-0',
+                                        errorVariant === 'info' ? 'text-[var(--status-info)]' : 'text-[var(--status-error)]',
+                                    )} />
+                                    <div className="min-w-0 flex-1 break-words">
+                                        <SimpleMarkdownRenderer
+                                            content={errorMessage ?? ''}
+                                            onShowPopup={onShowPopup}
+                                            className="[&_.markdown-content>*:first-child]:mt-0 [&_.markdown-content>*:last-child]:mb-0"
+                                        />
                                     </div>
                                 </div>
                             </div>
@@ -1772,7 +1854,7 @@ const AssistantMessageBody = React.memo(({
                         </div>
                         <div className="flex items-center gap-1.5">
                             {turnDurationText ? (
-                                <Tooltip delayDuration={300}>
+                                <Tooltip>
                                     <TooltipTrigger asChild>
                                         <span className="text-sm text-muted-foreground/60 tabular-nums flex items-center gap-1">
                                             <RiHourglassLine className="h-3.5 w-3.5" />
@@ -1783,7 +1865,7 @@ const AssistantMessageBody = React.memo(({
                                 </Tooltip>
                             ) : null}
                             {footerTimestamp ? (
-                                <Tooltip delayDuration={300}>
+                                <Tooltip>
                                     <TooltipTrigger asChild>
                                         <span
                                             className={footerTimestampClassName}
@@ -1816,6 +1898,7 @@ const MessageBody = React.memo(({ isUser, ...props }: MessageBodyProps) => {
                 messageId={props.messageId}
                 parts={props.parts}
                 isMobile={props.isMobile}
+                alwaysShowActions={props.alwaysShowActions}
                 hasTouchInput={props.hasTouchInput}
                 hasTextContent={props.hasTextContent}
                 onCopyMessage={props.onCopyMessage}

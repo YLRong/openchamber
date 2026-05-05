@@ -31,9 +31,11 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { opencodeClient } from '@/lib/opencode/client';
 import { renderMagicPrompt } from '@/lib/magicPrompts';
+import { parseModelIdentifier } from '@/lib/modelIdentifier';
+import { useDeviceInfo } from '@/lib/device';
 import { createWorktreeSessionForNewBranch } from '@/lib/worktreeSessionCreator';
 import { generateBranchSlug } from '@/lib/git/branchNameGenerator';
-import type { GitHubIssue, GitHubIssueComment, GitHubIssuesListResult, GitHubIssueSummary } from '@/lib/api/types';
+import type { GitHubIssue, GitHubIssueComment, GitHubIssuesListResult, GitHubIssueSummary, GitHubRepoSelector } from '@/lib/api/types';
 import { useI18n } from '@/lib/i18n';
 
 const parseIssueNumber = (value: string): number | null => {
@@ -86,17 +88,13 @@ export function GitHubIssuePickerDialog({
   const setSettingsDialogOpen = useUIStore((state) => state.setSettingsDialogOpen);
   const setSettingsPage = useUIStore((state) => state.setSettingsPage);
   const isMobile = useUIStore((state) => state.isMobile);
+  const { isTablet } = useDeviceInfo();
+  const alwaysShowActions = isMobile || isTablet;
   const activeProject = useProjectsStore((state) => state.getActiveProject());
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
 
   const projectDirectory = React.useMemo(() => {
-    const fromDirectoryStore = currentDirectory?.trim();
-    if (fromDirectoryStore) {
-      return fromDirectoryStore;
-    }
-
-    const fromActiveProject = activeProject?.path?.trim();
-    return fromActiveProject || null;
+    return activeProject?.path?.trim() || currentDirectory?.trim() || null;
   }, [activeProject?.path, currentDirectory]);
 
   const [query, setQuery] = React.useState('');
@@ -240,14 +238,11 @@ export function GitHubIssuePickerDialog({
       return null;
     }
 
-    const parts = settingsDefaultModel.split('/');
-    if (parts.length !== 2) {
+    const parsed = parseModelIdentifier(settingsDefaultModel);
+    if (!parsed) {
       return null;
     }
-    const [providerID, modelID] = parts;
-    if (!providerID || !modelID) {
-      return null;
-    }
+    const { providerId: providerID, modelId: modelID } = parsed;
 
     const modelMetadata = configState.getModelMetadata(providerID, modelID);
     if (!modelMetadata) {
@@ -278,7 +273,7 @@ export function GitHubIssuePickerDialog({
     return settingsDefaultVariant;
   }, []);
 
-  const startSession = React.useCallback(async (issueNumber: number) => {
+  const startSession = React.useCallback(async (issueNumber: number, sourceRepo?: GitHubRepoSelector | null) => {
     if (mode === 'select') {
       // In select mode, fetch full issue details and return via onSelect
       if (!projectDirectory) {
@@ -292,7 +287,7 @@ export function GitHubIssuePickerDialog({
       if (startingIssueNumber) return;
       setStartingIssueNumber(issueNumber);
       try {
-        const issueRes = await github.issueGet(projectDirectory, issueNumber);
+        const issueRes = await github.issueGet(projectDirectory, issueNumber, { sourceRepo });
         if (issueRes.connected === false) {
           toast.error(t('session.githubIssuePicker.error.notConnected'));
           return;
@@ -309,7 +304,7 @@ export function GitHubIssuePickerDialog({
           return;
         }
 
-        const commentsRes = await github.issueComments(projectDirectory, issueNumber);
+        const commentsRes = await github.issueComments(projectDirectory, issueNumber, { sourceRepo });
         if (commentsRes.connected === false) {
           toast.error(t('session.githubIssuePicker.error.notConnected'));
           return;
@@ -352,7 +347,7 @@ export function GitHubIssuePickerDialog({
     if (startingIssueNumber) return;
     setStartingIssueNumber(issueNumber);
     try {
-      const issueRes = await github.issueGet(projectDirectory, issueNumber);
+      const issueRes = await github.issueGet(projectDirectory, issueNumber, { sourceRepo });
       if (issueRes.connected === false) {
         toast.error(t('session.githubIssuePicker.error.notConnected'));
         return;
@@ -369,7 +364,7 @@ export function GitHubIssuePickerDialog({
         return;
       }
 
-      const commentsRes = await github.issueComments(projectDirectory, issueNumber);
+      const commentsRes = await github.issueComments(projectDirectory, issueNumber, { sourceRepo });
       if (commentsRes.connected === false) {
         toast.error(t('session.githubIssuePicker.error.notConnected'));
         return;
@@ -570,19 +565,26 @@ export function GitHubIssuePickerDialog({
 
           {filtered.map((issue) => (
             <div
-              key={issue.number}
+              key={`${issue.sourceRepo?.owner ?? ''}-${issue.sourceRepo?.repo ?? ''}-${issue.number}`}
               className={cn(
                 'group flex items-center gap-2 py-1.5 hover:bg-interactive-hover/30 rounded transition-colors cursor-pointer',
                 startingIssueNumber === issue.number && 'bg-interactive-selection/30'
               )}
-              onClick={() => void startSession(issue.number)}
+              onClick={() => void startSession(issue.number, issue.sourceRepo)}
             >
               <span className="typography-meta text-muted-foreground w-12 text-right flex-shrink-0">
                 #{issue.number}
               </span>
-              <p className="flex-1 min-w-0 typography-small text-foreground truncate ml-0.5">
-                {issue.title}
-              </p>
+              <div className="flex-1 min-w-0 ml-0.5">
+                <p className="typography-small text-foreground truncate">
+                  {issue.title}
+                </p>
+                {issue.sourceRepo?.source === 'upstream' ? (
+                  <span className="typography-micro px-1 py-0.5 rounded bg-status-info/10 text-status-info mt-0.5 inline-block">
+                    {issue.sourceRepo.owner}/{issue.sourceRepo.repo}
+                  </span>
+                ) : null}
+              </div>
 
               <div className="flex-shrink-0 h-5 flex items-center mr-2">
                 {startingIssueNumber === issue.number ? (
@@ -592,7 +594,10 @@ export function GitHubIssuePickerDialog({
                     href={issue.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="hidden group-hover:flex h-5 w-5 items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                    className={cn(
+                      "h-5 w-5 items-center justify-center text-muted-foreground hover:text-foreground transition-colors",
+                      alwaysShowActions ? "flex" : "hidden group-hover:flex"
+                    )}
                     onClick={(e) => e.stopPropagation()}
                     aria-label={t('session.githubIssuePicker.actions.openInGitHubAria')}
                   >

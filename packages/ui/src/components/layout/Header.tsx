@@ -36,7 +36,7 @@ import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { ContextUsageDisplay } from '@/components/ui/ContextUsageDisplay';
-import { useDeviceInfo } from '@/lib/device';
+import { useDeviceInfo, useTabletStandalonePwaRuntime } from '@/lib/device';
 import { cn, hasModifier } from '@/lib/utils';
 import { McpDropdownContent } from '@/components/mcp/McpDropdown';
 import { McpIcon } from '@/components/icons/McpIcon';
@@ -64,6 +64,8 @@ import type { GitHubAuthStatus } from '@/lib/api/types';
 import type { SessionContextUsage } from '@/stores/types/sessionTypes';
 import { DesktopHostSwitcherDialog } from '@/components/desktop/DesktopHostSwitcher';
 import { OpenInAppButton } from '@/components/desktop/OpenInAppButton';
+import { forceKillTerminal } from '@/lib/terminalApi';
+import { useTerminalStore } from '@/stores/useTerminalStore';
 import { ProjectActionsButton } from '@/components/layout/ProjectActionsButton';
 import { BackendIcon } from '@/components/ui/BackendIcon';
 import { isDesktopShell, isVSCodeRuntime, startDesktopWindowDrag } from '@/lib/desktop';
@@ -120,7 +122,7 @@ const HeaderIconActionButton = React.memo(function HeaderIconActionButton({
   }
 
   return (
-    <Tooltip delayDuration={500}>
+    <Tooltip>
       <TooltipTrigger asChild>
         <button
           type="button"
@@ -283,6 +285,9 @@ type DesktopServicesMenuProps = {
   expandedFamilies: Record<string, string[]>;
   toggleFamilyExpanded: (providerId: string, familyId: string) => void;
   shortcutLabel: (actionId: string) => string;
+  showDevShutdown: boolean;
+  isDevShutdownInFlight: boolean;
+  onDevShutdown: () => Promise<void>;
 };
 
 const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
@@ -309,6 +314,9 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
   expandedFamilies,
   toggleFamilyExpanded,
   shortcutLabel,
+  showDevShutdown,
+  isDevShutdownInFlight,
+  onDevShutdown,
 }: DesktopServicesMenuProps) {
   const { t } = useI18n();
   return (
@@ -324,7 +332,7 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
         }
       }}
     >
-      <Tooltip delayDuration={500}>
+      <Tooltip>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <button
@@ -545,6 +553,22 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
             </div>
           </div>
         ) : null}
+
+        {showDevShutdown ? (
+          <>
+            <div className="mx-4 my-2 border-t border-[var(--interactive-border)]" />
+            <div className="px-2 pb-2">
+              <DropdownMenuItem
+                disabled={isDevShutdownInFlight}
+                onSelect={() => {
+                  void onDevShutdown();
+                }}
+              >
+                {t('header.services.shutdownDev')}
+              </DropdownMenuItem>
+            </div>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -608,8 +632,8 @@ const normalize = (value: string): string => {
 const getActiveContextMode = (panelState: {
   isOpen: boolean;
   activeTabId: string | null;
-  tabs: Array<{ id: string; mode: 'diff' | 'file' | 'context' | 'plan' | 'chat' }>;
-} | undefined): 'diff' | 'file' | 'context' | 'plan' | 'chat' | null => {
+  tabs: Array<{ id: string; mode: 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview' }>;
+} | undefined): 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview' | null => {
   if (!panelState?.isOpen || !Array.isArray(panelState.tabs) || panelState.tabs.length === 0) {
     return null;
   }
@@ -678,6 +702,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const getCurrentModel = useConfigStore((state) => state.getCurrentModel);
   const runtimeApis = useRuntimeAPIs();
+  const [isDevShutdownInFlight, setIsDevShutdownInFlight] = React.useState(false);
 
   const {
     getContextUsage, openNewSessionDraft, isNewSessionDraftOpen, currentSessionId,
@@ -740,6 +765,7 @@ export const Header: React.FC<HeaderProps> = ({
     }
     return isDesktopShell();
   });
+  const isTabletStandalonePwa = useTabletStandalonePwaRuntime();
   const [isDesktopWindowFullscreen, setIsDesktopWindowFullscreen] = React.useState(false);
 
   const isMacPlatform = React.useMemo(() => {
@@ -1376,11 +1402,11 @@ export const Header: React.FC<HeaderProps> = ({
   const mobileHeaderIconButtonClass = MOBILE_HEADER_ICON_BUTTON_CLASS;
 
   const desktopPaddingClass = React.useMemo(() => {
-    if (!isSidebarOpen && isDesktopApp && isMacPlatform && !isDesktopWindowFullscreen) {
+    if (!isSidebarOpen && ((isDesktopApp && isMacPlatform && !isDesktopWindowFullscreen) || isTabletStandalonePwa)) {
       return 'pl-[5.5rem]';
     }
     return 'pl-3';
-  }, [isDesktopApp, isDesktopWindowFullscreen, isMacPlatform, isSidebarOpen]);
+  }, [isDesktopApp, isDesktopWindowFullscreen, isMacPlatform, isSidebarOpen, isTabletStandalonePwa]);
 
   useEffect(() => {
     if (!isDesktopApp || !isMacPlatform) {
@@ -1448,12 +1474,14 @@ export const Header: React.FC<HeaderProps> = ({
     }
 
     return {
-      paddingLeft: 'calc(0.75rem + var(--oc-wco-left-inset, 0px))',
+      paddingLeft: isTabletStandalonePwa && !isSidebarOpen
+        ? 'max(calc(0.75rem + var(--oc-wco-left-inset, 0px)), 5.5rem)'
+        : 'calc(0.75rem + var(--oc-wco-left-inset, 0px))',
       paddingRight: 'calc(0.75rem + var(--oc-wco-right-inset, 0px))',
       minHeight: 'max(3rem, var(--oc-wco-titlebar-height, 0px))',
       height: 'max(3rem, var(--oc-wco-titlebar-height, 0px))',
     };
-  }, [isDesktopApp, isVSCode]);
+  }, [isDesktopApp, isSidebarOpen, isTabletStandalonePwa, isVSCode]);
 
   const updateHeaderHeight = React.useCallback(() => {
     if (typeof document === 'undefined') {
@@ -1573,6 +1601,63 @@ export const Header: React.FC<HeaderProps> = ({
       icon: <tab.icon className="h-3.5 w-3.5" />,
     }));
   }, [servicesTabs]);
+
+  const showDevShutdown = React.useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    if (isDesktopApp) return false;
+    if (isVSCode) return false;
+    const host = window.location.hostname;
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  }, [isDesktopApp, isVSCode]);
+
+  const handleDevShutdown = React.useCallback(async () => {
+    if (isDevShutdownInFlight) return;
+    setIsDevShutdownInFlight(true);
+    setIsDesktopServicesOpen(false);
+
+    const previewUrls: string[] = [];
+    let shutdownRequested = false;
+    try {
+      try {
+        for (const [, dirState] of useTerminalStore.getState().sessions.entries()) {
+          for (const tab of dirState.tabs) {
+            if (tab.previewUrl) {
+              previewUrls.push(tab.previewUrl);
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      try {
+        // Ensure preview/dev terminals don't linger.
+        await forceKillTerminal({});
+      } catch {
+        // ignore
+      }
+
+      try {
+        const devRes = await fetch('/api/system/dev-shutdown', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ previewUrls }),
+        });
+        if (devRes.ok) {
+          shutdownRequested = true;
+        } else {
+          const shutdownRes = await fetch('/api/system/shutdown', { method: 'POST' });
+          shutdownRequested = shutdownRes.ok;
+        }
+      } catch {
+        // ignore
+      }
+    } finally {
+      if (!shutdownRequested) {
+        setIsDevShutdownInFlight(false);
+      }
+    }
+  }, [isDevShutdownInFlight, setIsDesktopServicesOpen]);
 
   const quotaDisplayTabs = React.useMemo(() => {
     return [
@@ -1717,7 +1802,7 @@ export const Header: React.FC<HeaderProps> = ({
   const desktopSidebarActions = (
     <>
       {showPlanTab && (
-        <Tooltip delayDuration={500}>
+        <Tooltip>
           <TooltipTrigger asChild>
               <button
                 type="button"
@@ -1758,6 +1843,9 @@ export const Header: React.FC<HeaderProps> = ({
         expandedFamilies={expandedFamilies}
         toggleFamilyExpanded={toggleFamilyExpanded}
         shortcutLabel={shortcutLabel}
+        showDevShutdown={showDevShutdown}
+        isDevShutdownInFlight={isDevShutdownInFlight}
+        onDevShutdown={handleDevShutdown}
       />
       <HeaderIconActionButton
         title={t('header.actions.terminalPanelWithShortcut', { shortcut: shortcutLabel('toggle_terminal') })}
@@ -1808,7 +1896,7 @@ export const Header: React.FC<HeaderProps> = ({
 
       <div className={cn('flex min-w-0 flex-1 items-center', !isSidebarOpen && 'pl-3')}>
         {!isLeftSidebarOpen ? (
-          <Tooltip delayDuration={500}>
+          <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
@@ -1979,7 +2067,7 @@ export const Header: React.FC<HeaderProps> = ({
                     const isDiffTab = tab.icon === 'diff';
                     const Icon = isDiffTab ? null : (tab.icon as RemixiconComponentType);
                     return (
-                      <Tooltip key={tab.id} delayDuration={500}>
+                      <Tooltip key={tab.id}>
                         <TooltipTrigger asChild>
                           <button
                             type="button"
@@ -2048,7 +2136,7 @@ export const Header: React.FC<HeaderProps> = ({
                 }
               }}
             >
-              <Tooltip delayDuration={500}>
+              <Tooltip>
                 <TooltipTrigger asChild>
                   <DropdownMenuTrigger asChild>
                     <button
@@ -2302,7 +2390,7 @@ export const Header: React.FC<HeaderProps> = ({
             </DropdownMenu>
 
             {onToggleRightDrawer ? (
-              <Tooltip delayDuration={500}>
+              <Tooltip>
                 <TooltipTrigger asChild>
                   <button
                     type="button"
