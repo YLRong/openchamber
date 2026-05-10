@@ -69,6 +69,7 @@ import { canUseElectronDesktopIPC, invokeDesktop, isDesktopShell, isVSCodeRuntim
 import { desktopHostsGet, locationMatchesHost, redactSensitiveUrl } from '@/lib/desktopHosts';
 import { resolveSessionDiffStats } from '@/components/session/sidebar/utils';
 import { useI18n } from '@/lib/i18n';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 import type { Session } from '@opencode-ai/sdk/v2/client';
 
 const DESKTOP_HEADER_ICON_BUTTON_CLASS = 'app-region-no-drag inline-flex h-8 w-8 items-center justify-center gap-2 rounded-md typography-ui-label font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50 hover:bg-interactive-hover transition-colors';
@@ -1222,7 +1223,7 @@ export const Header: React.FC<HeaderProps> = ({
       const payload = runtimeApis.github
         ? await runtimeApis.github.authActivate(accountId)
         : await (async () => {
-          const response = await fetch('/api/github/auth/activate', {
+          const response = await runtimeFetch('/api/github/auth/activate', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -1594,7 +1595,7 @@ export const Header: React.FC<HeaderProps> = ({
       }
 
       try {
-        const devRes = await fetch('/api/system/dev-shutdown', {
+        const devRes = await runtimeFetch('/api/system/dev-shutdown', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ previewUrls }),
@@ -1602,7 +1603,7 @@ export const Header: React.FC<HeaderProps> = ({
         if (devRes.ok) {
           shutdownRequested = true;
         } else {
-          const shutdownRes = await fetch('/api/system/shutdown', { method: 'POST' });
+          const shutdownRes = await runtimeFetch('/api/system/shutdown', { method: 'POST' });
           shutdownRequested = shutdownRes.ok;
         }
       } catch {

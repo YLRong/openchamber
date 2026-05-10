@@ -8,6 +8,7 @@ import {
   updateConfigUpdateMessage,
 } from "@/lib/configUpdate";
 import { getSafeStorage } from "./utils/safeStorage";
+import { runtimeFetch } from "@/lib/runtime-fetch";
 
 import { opencodeClient } from '@/lib/opencode/client';
 
@@ -212,7 +213,7 @@ export const useSkillsStore = create<SkillsStore>()(
               try {
                 const queryParams = currentDirectory ? `?directory=${encodeURIComponent(currentDirectory)}` : '';
 
-                const response = await fetch(`/api/config/skills${queryParams}`);
+                const response = await runtimeFetch(`/api/config/skills${queryParams}`);
                 if (!response.ok) {
                   throw new Error(`Failed to list skills: ${response.status}`);
                 }
@@ -256,7 +257,7 @@ export const useSkillsStore = create<SkillsStore>()(
             const currentDirectory = getCurrentDirectory();
             const queryParams = currentDirectory ? `?directory=${encodeURIComponent(currentDirectory)}` : '';
             
-            const response = await fetch(`/api/config/skills/${encodeURIComponent(name)}${queryParams}`);
+            const response = await runtimeFetch(`/api/config/skills/${encodeURIComponent(name)}${queryParams}`);
             if (!response.ok) {
               return null;
             }
@@ -284,7 +285,7 @@ export const useSkillsStore = create<SkillsStore>()(
             const currentDirectory = getCurrentDirectory();
             const queryParams = currentDirectory ? `?directory=${encodeURIComponent(currentDirectory)}` : '';
 
-            const response = await fetch(`/api/config/skills/${encodeURIComponent(config.name)}${queryParams}`, {
+            const response = await runtimeFetch(`/api/config/skills/${encodeURIComponent(config.name)}${queryParams}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(skillConfig)
@@ -333,7 +334,7 @@ export const useSkillsStore = create<SkillsStore>()(
             const currentDirectory = getCurrentDirectory();
             const queryParams = currentDirectory ? `?directory=${encodeURIComponent(currentDirectory)}` : '';
 
-            const response = await fetch(`/api/config/skills/${encodeURIComponent(name)}${queryParams}`, {
+            const response = await runtimeFetch(`/api/config/skills/${encodeURIComponent(name)}${queryParams}`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(skillConfig)
@@ -376,7 +377,7 @@ export const useSkillsStore = create<SkillsStore>()(
             const currentDirectory = getCurrentDirectory();
             const queryParams = currentDirectory ? `?directory=${encodeURIComponent(currentDirectory)}` : '';
 
-            const response = await fetch(`/api/config/skills/${encodeURIComponent(name)}${queryParams}`, {
+            const response = await runtimeFetch(`/api/config/skills/${encodeURIComponent(name)}${queryParams}`, {
               method: 'DELETE'
             });
 
@@ -425,7 +426,7 @@ export const useSkillsStore = create<SkillsStore>()(
             const currentDirectory = getCurrentDirectory();
             const queryParams = currentDirectory ? `&directory=${encodeURIComponent(currentDirectory)}` : '';
             
-            const response = await fetch(
+            const response = await runtimeFetch(
               `/api/config/skills/${encodeURIComponent(skillName)}/files/${encodeURIComponent(filePath)}?${queryParams.slice(1)}`
             );
             if (!response.ok) {
@@ -444,7 +445,7 @@ export const useSkillsStore = create<SkillsStore>()(
             const currentDirectory = getCurrentDirectory();
             const queryParams = currentDirectory ? `?directory=${encodeURIComponent(currentDirectory)}` : '';
             
-            const response = await fetch(
+            const response = await runtimeFetch(
               `/api/config/skills/${encodeURIComponent(skillName)}/files/${encodeURIComponent(filePath)}${queryParams}`,
               {
                 method: 'PUT',
@@ -464,7 +465,7 @@ export const useSkillsStore = create<SkillsStore>()(
             const currentDirectory = getCurrentDirectory();
             const queryParams = currentDirectory ? `?directory=${encodeURIComponent(currentDirectory)}` : '';
             
-            const response = await fetch(
+            const response = await runtimeFetch(
               `/api/config/skills/${encodeURIComponent(skillName)}/files/${encodeURIComponent(filePath)}${queryParams}`,
               { method: 'DELETE' }
             );

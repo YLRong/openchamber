@@ -20,6 +20,7 @@ import { copyTextToClipboard } from '@/lib/clipboard';
 import { openExternalUrl } from '@/lib/url';
 import type { ModelMetadata } from '@/types';
 import { useI18n } from '@/lib/i18n';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 
 const COMPACT_NUMBER_FORMATTER = new Intl.NumberFormat('en-US', {
   notation: 'compact',
@@ -179,7 +180,7 @@ export const ProvidersPage: React.FC = () => {
     const loadAuthMethods = async () => {
       setAuthLoading(true);
       try {
-        const response = await fetch('/api/provider/auth', {
+        const response = await runtimeFetch('/api/provider/auth', {
           method: 'GET',
           headers: { Accept: 'application/json' },
         });
@@ -216,7 +217,7 @@ export const ProvidersPage: React.FC = () => {
       setAvailableLoading(true);
       setAvailableError(null);
       try {
-        const response = await fetch('/api/provider', {
+        const response = await runtimeFetch('/api/provider', {
           method: 'GET',
           headers: { Accept: 'application/json' },
         });
@@ -291,7 +292,7 @@ export const ProvidersPage: React.FC = () => {
 
     const loadSources = async () => {
       try {
-        const response = await fetch(`/api/provider/${encodeURIComponent(selectedProviderId)}/source`, {
+        const response = await runtimeFetch(`/api/provider/${encodeURIComponent(selectedProviderId)}/source`, {
           method: 'GET',
           headers: { Accept: 'application/json' },
         });
@@ -336,7 +337,7 @@ export const ProvidersPage: React.FC = () => {
     setAuthBusyKey(busyKey);
 
     try {
-      const response = await fetch(`/api/auth/${encodeURIComponent(providerId)}`, {
+      const response = await runtimeFetch(`/api/auth/${encodeURIComponent(providerId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'api', key: apiKey }),
@@ -365,7 +366,7 @@ export const ProvidersPage: React.FC = () => {
     setAuthBusyKey(busyKey);
 
     try {
-      const response = await fetch(`/api/provider/${encodeURIComponent(providerId)}/oauth/authorize`, {
+      const response = await runtimeFetch(`/api/provider/${encodeURIComponent(providerId)}/oauth/authorize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ method: methodIndex }),
@@ -434,7 +435,7 @@ export const ProvidersPage: React.FC = () => {
         requestBody.code = code;
       }
 
-      const response = await fetch(`/api/provider/${encodeURIComponent(providerId)}/oauth/callback`, {
+      const response = await runtimeFetch(`/api/provider/${encodeURIComponent(providerId)}/oauth/callback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
@@ -484,7 +485,7 @@ export const ProvidersPage: React.FC = () => {
     setAuthBusyKey(busyKey);
 
     try {
-      const response = await fetch(`/api/provider/${encodeURIComponent(providerId)}/auth?scope=all`, {
+      const response = await runtimeFetch(`/api/provider/${encodeURIComponent(providerId)}/auth?scope=all`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
       });

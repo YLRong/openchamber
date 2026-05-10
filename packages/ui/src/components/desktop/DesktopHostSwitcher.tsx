@@ -98,19 +98,26 @@ const makeId = (): string => {
 const statusDotClass = (status: HostProbeResult['status'] | null): string => {
   if (status === 'ok') return 'bg-status-success';
   if (status === 'auth') return 'bg-status-warning';
+  if (status === 'incompatible') return 'bg-status-error';
   if (status === 'wrong-service') return 'bg-status-error';
   if (status === 'unreachable') return 'bg-status-error';
   return 'bg-muted-foreground/40';
 };
 
+const isBlockedHostStatus = (status: HostProbeResult['status'] | null): boolean => {
+  return status === 'unreachable' || status === 'wrong-service' || status === 'incompatible';
+};
+
 const statusLabelKey = (status: HostProbeResult['status'] | null):
   | 'desktopHostSwitcher.status.connected'
   | 'desktopHostSwitcher.status.authRequired'
+  | 'desktopHostSwitcher.status.incompatible'
   | 'desktopHostSwitcher.status.wrongService'
   | 'desktopHostSwitcher.status.unreachable'
   | 'desktopHostSwitcher.status.unknown' => {
   if (status === 'ok') return 'desktopHostSwitcher.status.connected';
   if (status === 'auth') return 'desktopHostSwitcher.status.authRequired';
+  if (status === 'incompatible') return 'desktopHostSwitcher.status.incompatible';
   if (status === 'wrong-service') return 'desktopHostSwitcher.status.wrongService';
   if (status === 'unreachable') return 'desktopHostSwitcher.status.unreachable';
   return 'desktopHostSwitcher.status.unknown';
@@ -119,6 +126,7 @@ const statusLabelKey = (status: HostProbeResult['status'] | null):
 const statusIcon = (status: HostProbeResult['status'] | null) => {
   if (status === 'ok') return <RiCheckLine className="h-4 w-4" />;
   if (status === 'auth') return <RiShieldKeyholeLine className="h-4 w-4" />;
+  if (status === 'incompatible') return <RiCloudOffLine className="h-4 w-4" />;
   if (status === 'wrong-service') return <RiCloudOffLine className="h-4 w-4" />;
   if (status === 'unreachable') return <RiCloudOffLine className="h-4 w-4" />;
   return <RiEarthLine className="h-4 w-4" />;
@@ -539,7 +547,7 @@ export function DesktopHostSwitcherDialog({
         [host.id]: { status: probe.status, latencyMs: probe.latencyMs },
       }));
 
-      if (probe.status === 'unreachable' || probe.status === 'wrong-service') {
+      if (isBlockedHostStatus(probe.status)) {
         toast.error(t('desktopHostSwitcher.toast.instanceUnreachable', { host: redactSensitiveUrl(host.label) }));
         setSwitchingHostId(null);
         return;
@@ -940,7 +948,7 @@ export function DesktopHostSwitcherDialog({
                             )}
                             onClick={() => void setDefault(host.id)}
                             aria-label={isDefault ? t('desktopHostSwitcher.actions.defaultInstanceAria') : t('desktopHostSwitcher.actions.setAsDefaultAria')}
-                            disabled={isSaving || (!isDefault && (statusKind === 'unreachable' || statusKind === 'wrong-service'))}
+                            disabled={isSaving || (!isDefault && isBlockedHostStatus(statusKind))}
                           >
                             {isDefault ? <RiStarFill className="h-4 w-4" /> : <RiStarLine className="h-4 w-4" />}
                           </button>
@@ -956,7 +964,7 @@ export function DesktopHostSwitcherDialog({
                             type="button"
                               className={cn(
                                 'h-8 w-8 rounded-md inline-flex items-center justify-center hover:bg-interactive-hover transition-colors',
-                                statusKind === 'unreachable' || statusKind === 'wrong-service'
+                                isBlockedHostStatus(statusKind)
                                   ? 'text-muted-foreground/30 cursor-not-allowed'
                                   : 'text-muted-foreground/60 hover:text-foreground',
                               )}
@@ -964,14 +972,14 @@ export function DesktopHostSwitcherDialog({
                               e.stopPropagation();
                               openInNewWindow(host);
                             }}
-                            disabled={statusKind === 'unreachable' || statusKind === 'wrong-service'}
+                            disabled={isBlockedHostStatus(statusKind)}
                             aria-label={t('desktopHostSwitcher.actions.openInNewWindowAria')}
                           >
                             <RiWindowLine className="h-4 w-4" />
                           </button>
                         </TooltipTrigger>
                         <TooltipContent sideOffset={6}>
-                          {(statusKind === 'unreachable' || statusKind === 'wrong-service')
+                          {isBlockedHostStatus(statusKind)
                             ? t('desktopHostSwitcher.state.instanceUnreachable')
                             : t('desktopHostSwitcher.actions.openInNewWindow')}
                         </TooltipContent>

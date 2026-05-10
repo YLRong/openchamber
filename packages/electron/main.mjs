@@ -502,18 +502,44 @@ const buildHealthUrl = (url) => {
   }
 };
 
+const buildVersionUrl = (url) => {
+  try {
+    const parsed = new URL(url);
+    parsed.pathname = `${parsed.pathname.replace(/\/$/, '') || ''}/api/version`;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
+
+const isCompatibleVersionPayload = (payload) => {
+  const compatibility = payload?.compatibility;
+  if (!compatibility || typeof compatibility !== 'object') return false;
+  return compatibility.apiVersion === 1
+    && compatibility.minClientApiVersion <= 1
+    && Array.isArray(compatibility.capabilities)
+    && compatibility.capabilities.includes('api.runtime-url.v1');
+};
+
 const probeHostWithTimeout = async (url, timeoutMs) => {
-  const healthUrl = buildHealthUrl(url);
-  if (!healthUrl) {
+  const versionUrl = buildVersionUrl(url);
+  if (!versionUrl) {
     throw new Error('Invalid URL');
   }
 
   const started = Date.now();
   try {
-    const response = await fetch(healthUrl, { signal: AbortSignal.timeout(timeoutMs) });
+    const response = await fetch(versionUrl, { signal: AbortSignal.timeout(timeoutMs), headers: { Accept: 'application/json' } });
     const status = response.status;
+    if (status === 401 || status === 403) {
+      return { status: 'auth', latencyMs: Date.now() - started };
+    }
+    if (status < 200 || status >= 300) {
+      return { status: 'unreachable', latencyMs: Date.now() - started };
+    }
+    const payload = await response.json().catch(() => null);
     return {
-      status: status >= 200 && status < 300 ? 'ok' : (status === 401 || status === 403 ? 'auth' : 'unreachable'),
+      status: isCompatibleVersionPayload(payload) ? 'ok' : 'incompatible',
       latencyMs: Date.now() - started,
     };
   } catch {
@@ -538,11 +564,11 @@ const waitForHealth = async (url, timeoutMs = 20_000, initialPollMs = 250, maxPo
   return false;
 };
 
-const pickUnusedPort = async () => {
+const pickUnusedPort = async (host = '127.0.0.1') => {
   const net = await import('node:net');
   return await new Promise((resolve, reject) => {
     const server = net.createServer();
-    server.listen(0, '127.0.0.1', () => {
+    server.listen(0, host, () => {
       const address = server.address();
       const port = typeof address === 'object' && address ? address.port : 0;
       server.close(() => resolve(port));
@@ -551,7 +577,7 @@ const pickUnusedPort = async () => {
   });
 };
 
-const isPortFree = async (port) => {
+const isPortFree = async (port, host = '127.0.0.1') => {
   if (!Number.isFinite(port) || port <= 0) return false;
   const net = await import('node:net');
   return await new Promise((resolve) => {
@@ -561,7 +587,7 @@ const isPortFree = async (port) => {
       resolve(value);
     };
     test.once('error', () => done(false));
-    test.listen(port, '127.0.0.1', () => done(true));
+    test.listen(port, host, () => done(true));
   });
 };
 
@@ -608,9 +634,21 @@ const buildLocalUrl = (port) => `http://127.0.0.1:${port}`;
 
 const resourceRoot = () => isDev ? path.join(__dirname, 'resources') : process.resourcesPath;
 const resolveWebDistDir = () => path.join(resourceRoot(), 'web-dist');
-const shouldUsePackagedUi = () => app.isPackaged && process.env.OPENCHAMBER_ELECTRON_LOAD_SERVER_UI !== '1';
+const shouldUsePackagedUi = () => {
+  if (process.env.OPENCHAMBER_ELECTRON_LOAD_SERVER_UI === '1') return false;
+  if (process.env.OPENCHAMBER_ELECTRON_USE_BUNDLED_UI === '1') return true;
+  return app.isPackaged;
+};
 const packagedUiOrigin = () => `${UI_PROTOCOL}://app`;
 const buildPackagedUiUrl = (pathname = '/index.html') => new URL(pathname, `${packagedUiOrigin()}/`).toString();
+
+const injectRuntimeConfigIntoHtml = (html) => {
+  const apiBaseUrl = state.apiBaseUrl || state.sidecarUrl || '';
+  const initScript = `<script>window.__OPENCHAMBER_LOCAL_ORIGIN__=${JSON.stringify(state.localOrigin || packagedUiOrigin())};window.__OPENCHAMBER_API_BASE_URL__=${JSON.stringify(apiBaseUrl)};window.__OPENCHAMBER_CLIENT_TOKEN__=${JSON.stringify(state.clientToken || '')};</script>`;
+  if (html.includes('<head>')) return html.replace('<head>', `<head>${initScript}`);
+  if (html.includes('</head>')) return html.replace('</head>', `${initScript}</head>`);
+  return `${initScript}${html}`;
+};
 
 const registerPackagedUiProtocol = () => {
   if (!shouldUsePackagedUi()) return;
@@ -633,8 +671,7 @@ const registerPackagedUiProtocol = () => {
       if (info.isFile()) {
         if (filePath.endsWith('.html')) {
           const html = await fsp.readFile(filePath, 'utf8');
-          const initScript = `<script>window.__OPENCHAMBER_LOCAL_ORIGIN__=${JSON.stringify(state.localOrigin || packagedUiOrigin())};window.__OPENCHAMBER_API_BASE_URL__=${JSON.stringify(state.apiBaseUrl || '')};window.__OPENCHAMBER_CLIENT_TOKEN__=${JSON.stringify(state.clientToken || '')};</script>`;
-          const body = html.includes('</head>') ? html.replace('</head>', `${initScript}</head>`) : `${initScript}${html}`;
+          const body = injectRuntimeConfigIntoHtml(html);
           return new Response(body, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
         }
         return electronNet.fetch(pathToFileURL(filePath).toString());
@@ -643,8 +680,7 @@ const registerPackagedUiProtocol = () => {
     }
     const indexPath = path.join(distPath, 'index.html');
     const html = await fsp.readFile(indexPath, 'utf8');
-    const initScript = `<script>window.__OPENCHAMBER_LOCAL_ORIGIN__=${JSON.stringify(state.localOrigin || packagedUiOrigin())};window.__OPENCHAMBER_API_BASE_URL__=${JSON.stringify(state.apiBaseUrl || '')};window.__OPENCHAMBER_CLIENT_TOKEN__=${JSON.stringify(state.clientToken || '')};</script>`;
-    const body = html.includes('</head>') ? html.replace('</head>', `${initScript}</head>`) : `${initScript}${html}`;
+    const body = injectRuntimeConfigIntoHtml(html);
     return new Response(body, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
   });
 };
@@ -821,13 +857,13 @@ const spawnLocalServer = async () => {
   const candidates = [storedPort, DEFAULT_DESKTOP_PORT].filter((v) => Number.isFinite(v) && v > 0);
   let chosenPort = 0;
   for (const candidate of candidates) {
-    if (await isPortFree(candidate)) {
+    if (await isPortFree(candidate, bindHost)) {
       chosenPort = candidate;
       break;
     }
   }
   if (chosenPort === 0) {
-    chosenPort = await pickUnusedPort();
+    chosenPort = await pickUnusedPort(bindHost);
   }
 
   // The server module reads ENV_DESKTOP_NOTIFY / OPENCHAMBER_DIST_DIR /
@@ -906,7 +942,13 @@ const buildInitScript = (localOrigin, bootOutcome, apiBaseUrl = '', clientToken 
 
 const computeBootOutcome = ({ envTargetUrl, probe, config, localAvailable }) => {
   if (envTargetUrl) {
-    const status = probe && probe.status === 'unreachable' ? 'unreachable' : 'ok';
+    const status = probe?.status === 'unreachable'
+      ? 'unreachable'
+      : probe?.status === 'incompatible'
+        ? 'incompatible'
+        : probe?.status === 'wrong-service'
+          ? 'wrong-service'
+          : 'ok';
     return { target: 'remote', status, hostId: ENV_OVERRIDE_HOST_ID, url: envTargetUrl };
   }
 
@@ -926,8 +968,14 @@ const computeBootOutcome = ({ envTargetUrl, probe, config, localAvailable }) => 
     return { target: 'remote', status: 'missing', hostId: defaultId };
   }
 
-  const status = probe && probe.status === 'unreachable' ? 'unreachable' : 'ok';
-  return { target: 'remote', status, hostId: host.id, url: host.url };
+  const status = probe?.status === 'unreachable'
+    ? 'unreachable'
+    : probe?.status === 'incompatible'
+      ? 'incompatible'
+      : probe?.status === 'wrong-service'
+        ? 'wrong-service'
+        : 'ok';
+  return { target: 'remote', status, hostId: host.id, url: host.apiUrl || host.url };
 };
 
 const buildStartupSplashHtml = () => {

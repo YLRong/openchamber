@@ -1,5 +1,6 @@
 import type { OpenChamberProjectAction } from './openchamberConfig';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 
 type DevServerInfo = {
   command: string;
@@ -82,7 +83,7 @@ async function hasStaticIndexHtml(directory: string): Promise<boolean> {
 
 async function allocatePreviewPort(): Promise<number | null> {
   try {
-    const response = await fetch('/api/system/free-port', { cache: 'no-store' });
+    const response = await runtimeFetch('/api/system/free-port', { cache: 'no-store' });
     if (!response.ok) return null;
     const body = await response.json().catch(() => null) as { port?: unknown } | null;
     const port = typeof body?.port === 'number' ? body.port : null;
@@ -182,7 +183,7 @@ async function readOptionalTextFile(path: string): Promise<string | null> {
   }
 
   try {
-    const response = await fetch(`/api/fs/read?path=${encodeURIComponent(path)}&optional=true`, {
+    const response = await runtimeFetch(`/api/fs/read?path=${encodeURIComponent(path)}&optional=true`, {
       cache: 'no-store',
     });
     if (!response.ok) return null;

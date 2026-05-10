@@ -15,6 +15,8 @@ import type {
 import type { PermissionRequest } from "@/types/permission";
 import type { QuestionRequest } from "@/types/question";
 import { waitForWorktreeBootstrap } from "@/lib/worktrees/worktreeBootstrap";
+import { getRuntimeUrlResolver } from "@/lib/runtime-url";
+import { runtimeFetch } from "@/lib/runtime-fetch";
 import {
   assertProviderCircuitClosed,
   recordProviderSuccess,
@@ -97,29 +99,12 @@ const ensureAbsoluteBaseUrl = (candidate: string): string => {
   }
 };
 
-const resolveDesktopBaseUrl = (): string | null => {
-  if (typeof window === "undefined") {
+const resolveRuntimeBaseUrl = (): string | null => {
+  try {
+    return getRuntimeUrlResolver().api('/api');
+  } catch {
     return null;
   }
-  const desktopServer = (window as typeof window & {
-    __OPENCHAMBER_DESKTOP_SERVER__?: { origin: string; apiPrefix?: string };
-    __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs;
-  }).__OPENCHAMBER_DESKTOP_SERVER__;
-
-  const isDesktop = Boolean(
-    (window as typeof window & { __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs }).__OPENCHAMBER_RUNTIME_APIS__?.runtime?.isDesktop
-  );
-
-  if (!desktopServer || !isDesktop) {
-    return null;
-  }
-
-  const origin = typeof desktopServer.origin === "string" && desktopServer.origin.length > 0 ? desktopServer.origin : null;
-  if (!origin) {
-    return null;
-  }
-
-  return `${origin}/api`;
 };
 
 interface App {
@@ -193,8 +178,8 @@ class OpencodeService {
   private listDirectoryCache: Map<string, { entries: FilesystemEntry[]; expiresAt: number }> = new Map();
 
   constructor(baseUrl: string = DEFAULT_BASE_URL) {
-    const desktopBase = resolveDesktopBaseUrl();
-    const requestedBaseUrl = desktopBase || baseUrl;
+    const runtimeBase = resolveRuntimeBaseUrl();
+    const requestedBaseUrl = runtimeBase || baseUrl;
     this.baseUrl = ensureAbsoluteBaseUrl(requestedBaseUrl);
     this.client = createOpencodeClient({ baseUrl: this.baseUrl });
   }
@@ -1006,8 +991,7 @@ class OpencodeService {
     Record<string, { type: string }> | null
   > {
     try {
-      // Web server endpoint - use relative path that works with both dev and prod
-      const response = await fetch('/api/session-activity', {
+      const response = await runtimeFetch('/api/session-activity', {
         method: 'GET',
         headers: {
           Accept: 'application/json',

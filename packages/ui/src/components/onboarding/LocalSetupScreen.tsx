@@ -8,6 +8,7 @@ import { copyTextToClipboard } from '@/lib/clipboard';
 import { restartDesktopApp } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
 import { getRuntimeUrlResolver } from '@/lib/runtime-url';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 
 const INSTALL_COMMAND = 'curl -fsSL https://opencode.ai/install | bash';
 const DOCS_URL = 'https://opencode.ai/docs';
@@ -100,7 +101,7 @@ export function LocalSetupScreen({
     let cancelled = false;
     void (async () => {
       try {
-        const response = await fetch('/api/config/settings', { method: 'GET', headers: { Accept: 'application/json' } });
+        const response = await runtimeFetch('/api/config/settings', { method: 'GET', headers: { Accept: 'application/json' } });
         if (!response.ok) return;
         const data = (await response.json().catch(() => null)) as null | { opencodeBinary?: unknown };
         if (!data || cancelled) return;
@@ -183,7 +184,7 @@ export function LocalSetupScreen({
         return;
       }
 
-      await fetch('/api/config/reload', { method: 'POST' });
+      await runtimeFetch('/api/config/reload', { method: 'POST' });
     } finally {
       setTimeout(() => setIsRetrying(false), 1000);
     }

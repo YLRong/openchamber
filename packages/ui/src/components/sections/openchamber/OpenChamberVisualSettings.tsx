@@ -1,5 +1,6 @@
 import React from 'react';
 import { RiRestartLine, RiInformationLine } from '@remixicon/react';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
@@ -576,7 +577,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
 
         const loadPwaInstallName = async () => {
             try {
-                const response = await fetch('/api/config/settings', {
+                const response = await runtimeFetch('/api/config/settings', {
                     method: 'GET',
                     headers: { Accept: 'application/json' },
                     cache: 'no-store',

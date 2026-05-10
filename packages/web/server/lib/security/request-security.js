@@ -96,6 +96,10 @@ export const createRequestSecurityRuntime = (deps) => {
       return false;
     }
 
+    if ((process.env.OPENCHAMBER_RUNTIME || '') === 'desktop' && originHeader === 'openchamber-ui://app') {
+      return true;
+    }
+
     let normalizedOrigin = '';
     try {
       normalizedOrigin = new URL(originHeader).origin;

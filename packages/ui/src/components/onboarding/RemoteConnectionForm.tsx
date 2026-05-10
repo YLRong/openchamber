@@ -37,6 +37,8 @@ function getProbeStatusMessageKey(status: ProbeStatus): string | null {
       return null; // Success is shown separately
     case 'auth':
       return 'onboarding.remoteConnection.probe.authMessage';
+    case 'incompatible':
+      return 'onboarding.remoteConnection.probe.incompatibleMessage';
     case 'wrong-service':
       return 'onboarding.remoteConnection.probe.wrongServiceMessage';
     case 'unreachable':
@@ -47,7 +49,7 @@ function getProbeStatusMessageKey(status: ProbeStatus): string | null {
 }
 
 function isBlockingStatus(status: ProbeStatus): boolean {
-  return status === 'wrong-service' || status === 'unreachable';
+  return status === 'wrong-service' || status === 'unreachable' || status === 'incompatible';
 }
 
 export function RemoteConnectionForm({

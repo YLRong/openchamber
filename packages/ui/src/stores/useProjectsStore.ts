@@ -10,6 +10,7 @@ import { useDirectoryStore } from './useDirectoryStore';
 import { streamDebugEnabled } from '@/stores/utils/streamDebug';
 import { PROJECT_COLORS } from '@/lib/projectMeta';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 
 /** Pick a color key that's least used among existing projects */
 const pickAutoColor = (projects: ProjectEntry[]): string => {
@@ -539,7 +540,7 @@ export const useProjectsStore = create<ProjectsStore>()(
         const dataUrl = await readFileAsDataUrl(file);
         const normalizedDataUrl = dataUrl.replace(/^data:[^;]+;/i, `data:${mime};`);
 
-        const response = await fetch(`/api/projects/${encodeURIComponent(id)}/icon`, {
+        const response = await runtimeFetch(`/api/projects/${encodeURIComponent(id)}/icon`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -570,7 +571,7 @@ export const useProjectsStore = create<ProjectsStore>()(
       }
 
       try {
-        const response = await fetch(`/api/projects/${encodeURIComponent(id)}/icon`, {
+        const response = await runtimeFetch(`/api/projects/${encodeURIComponent(id)}/icon`, {
           method: 'DELETE',
           headers: {
             Accept: 'application/json',
@@ -599,7 +600,7 @@ export const useProjectsStore = create<ProjectsStore>()(
       }
 
       try {
-        const response = await fetch(`/api/projects/${encodeURIComponent(id)}/icon/discover`, {
+        const response = await runtimeFetch(`/api/projects/${encodeURIComponent(id)}/icon/discover`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

@@ -18,6 +18,7 @@ import {
   RiRestartLine,
 } from '@remixicon/react';
 import { toast } from '@/components/ui';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
@@ -384,10 +385,10 @@ export const TunnelSettings: React.FC = () => {
   const checkAvailabilityAndStatus = React.useCallback(async (signal: AbortSignal) => {
     try {
       const [checkRes, statusRes, settingsRes, providersRes] = await Promise.all([
-        fetch('/api/openchamber/tunnel/check', { signal }),
-        fetch('/api/openchamber/tunnel/status', { signal }),
-        fetch('/api/config/settings', { signal, headers: { Accept: 'application/json' } }),
-        fetch('/api/openchamber/tunnel/providers', { signal }),
+        runtimeFetch('/api/openchamber/tunnel/check', { signal }),
+        runtimeFetch('/api/openchamber/tunnel/status', { signal }),
+        runtimeFetch('/api/config/settings', { signal, headers: { Accept: 'application/json' } }),
+        runtimeFetch('/api/openchamber/tunnel/providers', { signal }),
       ]);
 
       const checkData = await checkRes.json();
@@ -600,7 +601,7 @@ export const TunnelSettings: React.FC = () => {
     let cancelled = false;
     const refreshSessions = async () => {
       try {
-        const statusRes = await fetch('/api/openchamber/tunnel/status');
+        const statusRes = await runtimeFetch('/api/openchamber/tunnel/status');
         if (!statusRes.ok || cancelled) {
           return;
         }
@@ -800,7 +801,7 @@ export const TunnelSettings: React.FC = () => {
         });
       }
 
-      const res = await fetch('/api/openchamber/tunnel/start', {
+      const res = await runtimeFetch('/api/openchamber/tunnel/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -895,8 +896,8 @@ export const TunnelSettings: React.FC = () => {
     setState('stopping');
 
     try {
-      await fetch('/api/openchamber/tunnel/stop', { method: 'POST' });
-      const statusRes = await fetch('/api/openchamber/tunnel/status');
+      await runtimeFetch('/api/openchamber/tunnel/stop', { method: 'POST' });
+      const statusRes = await runtimeFetch('/api/openchamber/tunnel/status');
       if (statusRes.ok) {
         const statusData = (await statusRes.json()) as TunnelStatusResponse;
         setSessionRecords(Array.isArray(statusData.activeSessions) ? statusData.activeSessions : []);

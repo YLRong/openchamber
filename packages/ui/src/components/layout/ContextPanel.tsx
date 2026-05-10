@@ -20,6 +20,7 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useInputStore } from '@/sync/input-store';
 import { ContextPanelContent } from './ContextSidebarTab';
 import { toast } from '@/components/ui';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 
 const CONTEXT_PANEL_MIN_WIDTH = 360;
 const CONTEXT_PANEL_MAX_WIDTH = 1400;
@@ -445,7 +446,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
 
     void (async () => {
       try {
-        const response = await fetch('/api/preview/targets', {
+        const response = await runtimeFetch('/api/preview/targets', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',

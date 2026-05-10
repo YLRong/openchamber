@@ -1,4 +1,5 @@
 import { getRuntimeUrlResolver } from './runtime-url';
+import { runtimeFetch } from './runtime-fetch';
 
 export interface TerminalWebSocketDescriptor {
   path: string;
@@ -723,7 +724,7 @@ const applyTerminalTransportCapabilities = (capabilities: TerminalSession['capab
 };
 
 const sendTerminalInputHttp = async (sessionId: string, data: string): Promise<void> => {
-  const response = await fetch(getRuntimeUrlResolver().api(`/api/terminal/${sessionId}/input`), {
+  const response = await runtimeFetch(`/api/terminal/${sessionId}/input`, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },
     body: data,
@@ -736,7 +737,7 @@ const sendTerminalInputHttp = async (sessionId: string, data: string): Promise<v
 };
 
 export async function createTerminalSession(options: CreateTerminalOptions): Promise<TerminalSession> {
-  const response = await fetch(getRuntimeUrlResolver().api('/api/terminal/create'), {
+  const response = await runtimeFetch('/api/terminal/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -925,7 +926,7 @@ export async function resizeTerminal(
   cols: number,
   rows: number
 ): Promise<void> {
-  const response = await fetch(getRuntimeUrlResolver().api(`/api/terminal/${sessionId}/resize`), {
+  const response = await runtimeFetch(`/api/terminal/${sessionId}/resize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cols, rows }),
@@ -940,7 +941,7 @@ export async function resizeTerminal(
 export async function closeTerminal(sessionId: string): Promise<void> {
   getTerminalTransportGlobalState().manager?.unbindSession(sessionId);
 
-  const response = await fetch(getRuntimeUrlResolver().api(`/api/terminal/${sessionId}`), {
+  const response = await runtimeFetch(`/api/terminal/${sessionId}`, {
     method: 'DELETE',
   });
 
@@ -956,7 +957,7 @@ export async function restartTerminalSession(
 ): Promise<TerminalSession> {
   getTerminalTransportGlobalState().manager?.unbindSession(currentSessionId);
 
-  const response = await fetch(getRuntimeUrlResolver().api(`/api/terminal/${currentSessionId}/restart`), {
+  const response = await runtimeFetch(`/api/terminal/${currentSessionId}/restart`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -980,7 +981,7 @@ export async function forceKillTerminal(options: {
   sessionId?: string;
   cwd?: string;
 }): Promise<void> {
-  const response = await fetch(getRuntimeUrlResolver().api('/api/terminal/force-kill'), {
+  const response = await runtimeFetch('/api/terminal/force-kill', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(options),

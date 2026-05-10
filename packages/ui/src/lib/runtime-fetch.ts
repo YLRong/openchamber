@@ -9,10 +9,50 @@ const shouldResolveApiPath = (input: string): boolean => {
   return input.startsWith('/api/') || input === '/api' || input.startsWith('/auth/') || input === '/auth' || input === '/health';
 };
 
+const getCurrentOrigin = (): string => {
+  if (typeof window === 'undefined') return '';
+  return window.location.origin || '';
+};
+
+const isCurrentWindowUrl = (url: URL): boolean => {
+  if (typeof window === 'undefined') return false;
+  const currentOrigin = getCurrentOrigin();
+  if (currentOrigin && url.origin === currentOrigin) return true;
+  try {
+    const current = new URL(window.location.href || currentOrigin);
+    return url.protocol === current.protocol && url.host === current.host;
+  } catch {
+    return false;
+  }
+};
+
+const shouldResolveFetchInput = (input: string): boolean => {
+  if (shouldResolveApiPath(input)) return true;
+  if (!/^[a-z][a-z\d+.-]*:\/\//i.test(input)) return false;
+  try {
+    const url = new URL(input);
+    return isCurrentWindowUrl(url) && shouldResolveApiPath(url.pathname);
+  } catch {
+    return false;
+  }
+};
+
+const buildRuntimeFetchUrlFromAbsolute = (input: string, query?: RuntimeUrlQuery): string => {
+  try {
+    const url = new URL(input);
+    if (!isCurrentWindowUrl(url)) return input;
+    const rewritten = buildRuntimeFetchUrl(`${url.pathname}${url.search}`, query);
+    return url.hash ? `${rewritten}${url.hash}` : rewritten;
+  } catch {
+    return input;
+  }
+};
+
 export const buildRuntimeFetchUrl = (input: string, query?: RuntimeUrlQuery): string => {
   if (input === '/health') return getRuntimeUrlResolver().health(query);
   if (input.startsWith('/auth/') || input === '/auth') return getRuntimeUrlResolver().auth(input, query);
   if (shouldResolveApiPath(input)) return getRuntimeUrlResolver().api(input, query);
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(input)) return buildRuntimeFetchUrlFromAbsolute(input, query);
   return input;
 };
 
@@ -27,4 +67,37 @@ export const runtimeFetch = async (input: string | URL | Request, init: RuntimeF
     ...requestInit,
     headers,
   });
+};
+
+let runtimeFetchBridgeInstalled = false;
+
+export const installRuntimeFetchBridge = (): void => {
+  if (runtimeFetchBridgeInstalled || typeof window === 'undefined') return;
+  runtimeFetchBridgeInstalled = true;
+
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    if (typeof input === 'string') {
+      if (!shouldResolveFetchInput(input)) return nativeFetch(input, init);
+      const headers = await buildRuntimeAuthHeaders(init?.headers);
+      return nativeFetch(buildRuntimeFetchUrl(input), { ...init, headers });
+    }
+
+    if (input instanceof URL) {
+      const raw = input.toString();
+      if (!shouldResolveFetchInput(raw)) return nativeFetch(input, init);
+      const headers = await buildRuntimeAuthHeaders(init?.headers);
+      return nativeFetch(buildRuntimeFetchUrl(raw), { ...init, headers });
+    }
+
+    if (input instanceof Request) {
+      if (!shouldResolveFetchInput(input.url)) return nativeFetch(input, init);
+      const headers = await buildRuntimeAuthHeaders(init?.headers ?? input.headers);
+      const target = buildRuntimeFetchUrl(input.url);
+      const request = target === input.url ? input : new Request(target, input);
+      return nativeFetch(request, { ...init, headers });
+    }
+
+    return nativeFetch(input, init);
+  };
 };

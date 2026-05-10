@@ -11,6 +11,7 @@ import { RemoteConnectionForm } from './RemoteConnectionForm';
 import { desktopHostsGet, desktopHostsSet } from '@/lib/desktopHosts';
 import { useI18n } from '@/lib/i18n';
 import { getRuntimeUrlResolver } from '@/lib/runtime-url';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 
 const INSTALL_COMMAND = 'curl -fsSL https://opencode.ai/install | bash';
 const DOCS_URL = 'https://opencode.ai/docs';
@@ -79,7 +80,7 @@ export function ChooserScreen({ onCliAvailable }: ChooserScreenProps) {
     let cancelled = false;
     void (async () => {
       try {
-        const response = await fetch('/api/config/settings', { method: 'GET', headers: { Accept: 'application/json' } });
+        const response = await runtimeFetch('/api/config/settings', { method: 'GET', headers: { Accept: 'application/json' } });
         if (!response.ok) return;
         const data = (await response.json().catch(() => null)) as null | { opencodeBinary?: unknown };
         if (!data || cancelled) return;
@@ -207,7 +208,7 @@ export function ChooserScreen({ onCliAvailable }: ChooserScreenProps) {
         await restartDesktopApp();
         return;
       }
-      await fetch('/api/config/reload', { method: 'POST' });
+      await runtimeFetch('/api/config/reload', { method: 'POST' });
     } finally {
       setTimeout(() => setIsApplyingPath(false), 1000);
     }
