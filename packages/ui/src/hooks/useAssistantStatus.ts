@@ -57,27 +57,6 @@ type SessionMessageRecord = {
     parts: Part[];
 };
 
-export const WORKING_PHRASES = [
-    'working',
-    'processing',
-    'preparing',
-    'warming up',
-    'gears turning',
-    'computing',
-    'calculating',
-    'analyzing',
-    'wheels spinning',
-    'calibrating',
-    'synthesizing',
-    'connecting dots',
-    'inspecting logic',
-    'weighing options',
-];
-
-export const getRandomWorkingPhrase = (): string => {
-    return WORKING_PHRASES[Math.floor(Math.random() * WORKING_PHRASES.length)];
-};
-
 const DEFAULT_WORKING: WorkingSummary = {
     activity: 'idle',
     hasWorkingContext: false,
@@ -312,15 +291,36 @@ export function useAssistantStatus(): AssistantStatusSnapshot {
             plan_exit: 'switching to building',
         };
 
+        const WORKING_PHRASES = [
+            'working',
+            'processing',
+            'preparing',
+            'warming up',
+            'gears turning',
+            'computing',
+            'calculating',
+            'analyzing',
+            'wheels spinning',
+            'calibrating',
+            'synthesizing',
+            'connecting dots',
+            'inspecting logic',
+            'weighing options',
+        ];
+
         const getToolStatusPhrase = (toolName: string): string => {
             return TOOL_STATUS_PHRASES[toolName] ?? `using ${toolName}`;
+        };
+
+        const getRandomWorkingPhrase = (): string => {
+            return WORKING_PHRASES[Math.floor(Math.random() * WORKING_PHRASES.length)];
         };
 
         const isGenericStatus = activePartType === undefined;
         const statusText = (() => {
             if (activePartType === 'editing') return activeToolName === 'multiedit' ? getToolStatusPhrase(activeToolName) : 'editing file';
             if (activePartType === 'tool' && activeToolName) return getToolStatusPhrase(activeToolName);
-            if (activePartType === 'reasoning') return getRandomWorkingPhrase();
+            if (activePartType === 'reasoning') return 'thinking';
             if (activePartType === 'text') return 'composing';
             return getRandomWorkingPhrase();
         })();
