@@ -1623,6 +1623,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.modelControls.modeValue.all": "всі",
   "chat.modelControls.modeValue.none": "—",
   "chat.reasoningTrace.thinking": "Міркування",
+  "chat.reasoningTrace.reasoning": "Міркую",
   "chat.reasoningTrace.justification": "Обґрунтування",
   "chat.reasoningTrace.expandAria": "Розгорнути слід міркування",
   "chat.reasoningTrace.collapseAria": "Згорнути слід міркування",

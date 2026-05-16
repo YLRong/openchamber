@@ -31,8 +31,8 @@ describe('ReasoningTimelineBlock', () => {
       </I18nProvider>,
     );
 
-    // Accessible toggle button is rendered
-    expect(markup).toContain('<button');
+    // Accessible toggle row is rendered
+    expect(markup).toContain('role="button"');
     expect(markup).toContain('aria-expanded="false"');
     expect(markup).toContain('aria-label="Expand reasoning trace"');
 

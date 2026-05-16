@@ -3,12 +3,10 @@ import type { Part } from '@opencode-ai/sdk/v2';
 import { cn } from '@/lib/utils';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
-import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/icon/Icon';
 import { BusyDots } from './BusyDots';
 import { useI18n } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
-import { useDurationTickerNow } from './useDurationTicker';
 import { MarkdownRenderer } from '../../MarkdownRenderer';
 import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
 
@@ -71,19 +69,6 @@ const getReasoningSummary = (text: string): string => {
     return `${flat.substring(0, end).trimEnd()}…`;
 };
 
-const formatDuration = (start: number, end?: number, now: number = Date.now()): string => {
-    const duration = end ? end - start : now - start;
-    const seconds = duration / 1000;
-    const displaySeconds = seconds < 0.05 && end !== undefined ? 0.1 : seconds;
-    return `${displaySeconds.toFixed(1)}s`;
-};
-
-const LiveDuration: React.FC<{ start: number; end?: number; active: boolean }> = ({ start, end, active }) => {
-    const now = useDurationTickerNow(active, 250);
-
-    return <>{formatDuration(start, end, now)}</>;
-};
-
 type ReasoningTimelineBlockProps = {
     text: string;
     variant: ReasoningVariant;
@@ -102,8 +87,6 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
     variant,
     onContentChange,
     blockId,
-    time,
-    showDuration = true,
     isStreaming = false,
     actions,
     defaultExpanded,
@@ -117,8 +100,6 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
     const prevIsStreamingRef = React.useRef(isStreaming);
 
     const summary = React.useMemo(() => getReasoningSummary(text), [text]);
-    const timeStart = typeof time?.start === 'number' && Number.isFinite(time.start) ? time.start : undefined;
-    const timeEnd = typeof time?.end === 'number' && Number.isFinite(time.end) ? time.end : undefined;
     const toggleAriaLabel = isExpanded
         ? t('chat.reasoningTrace.collapseAria')
         : t('chat.reasoningTrace.expandAria');
@@ -190,65 +171,78 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
 
     return (
         <div className="my-1" data-reasoning-block-id={blockId} data-message-text-export-root="true">
-            {/* Header — matches ToolPart row structure */}
-            <Button
-                type="button"
-                variant="ghost"
+            <div
+                role="button"
+                tabIndex={0}
                 aria-expanded={isExpanded}
                 aria-controls={contentId}
                 aria-label={toggleAriaLabel}
                 className={cn(
-                    'group/tool h-auto w-full justify-start rounded-xl bg-transparent',
-                    'px-0.5 py-1.5 text-left normal-case tracking-normal',
-                    'hover:bg-[var(--interactive-hover)] hover:text-[var(--surface-foreground)]',
+                    'group/tool flex gap-1.5 pr-2 pl-px py-2 rounded-xl cursor-pointer items-center',
                 )}
                 onClick={handleToggle}
                 onKeyDown={handleKeyDown}
             >
-                <div className="flex items-center gap-1.5 w-full min-w-0">
-                    {/* Chevron — arrow-right-s collapsed, arrow-down-s expanded */}
-                    <Icon
-                        name={isExpanded ? 'arrow-down-s' : 'arrow-right-s'}
-                        className="h-3.5 w-3.5 flex-shrink-0"
-                        style={{ color: 'var(--tools-icon)' }}
-                    />
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <div className="relative h-3.5 w-3.5 flex-shrink-0 cursor-pointer">
+                        <div
+                            className={cn(
+                                'absolute inset-0 transition-opacity',
+                                isExpanded && 'opacity-0',
+                                !isExpanded && 'group-hover/tool:opacity-0',
+                            )}
+                            style={{ color: 'var(--tools-icon)' }}
+                        >
+                            <Icon name="brain-ai-3" className="h-3.5 w-3.5" />
+                        </div>
+                        <div
+                            className={cn(
+                                'absolute inset-0 transition-opacity flex items-center justify-center',
+                                isExpanded && 'opacity-100',
+                                !isExpanded && 'opacity-0 group-hover/tool:opacity-100',
+                            )}
+                            style={{ color: 'var(--tools-icon)' }}
+                        >
+                            {isExpanded ? <Icon name="arrow-down-s" className="h-3.5 w-3.5" /> : <Icon name="arrow-right-s" className="h-3.5 w-3.5" />}
+                        </div>
+                    </div>
 
-                    {/* Summary when collapsed, "Thinking" label when expanded, busy dots while streaming */}
                     {isStreaming ? (
-                        <span className="flex-1 typography-meta" style={{ color: 'var(--tools-description)' }}>
+                        <span className="flex items-center gap-1 typography-meta font-medium" style={{ color: 'var(--tools-title)' }}>
+                            <span>{t('chat.reasoningTrace.reasoning')}</span>
                             <BusyDots />
                         </span>
                     ) : isExpanded ? (
                         <span
-                            className="flex-1 typography-meta font-normal"
-                            style={{ color: 'var(--surface-muted-foreground)' }}
+                            className="typography-meta font-medium"
+                            style={{ color: 'var(--tools-title)' }}
                         >
                             {t(variant === 'justification' ? 'chat.reasoningTrace.justification' : 'chat.reasoningTrace.thinking')}
                         </span>
-                    ) : summary ? (
+                    ) : (
                         <span
-                            className="flex-1 min-w-0 truncate font-normal"
-                            style={{ color: 'var(--surface-muted-foreground)', fontSize: 'var(--text-markdown)' }}
+                            className="typography-meta font-medium"
+                            style={{ color: 'var(--tools-title)' }}
+                        >
+                            {t(variant === 'justification' ? 'chat.reasoningTrace.justification' : 'chat.reasoningTrace.thinking')}
+                        </span>
+                    )}
+                </div>
+
+                <div className="flex items-center gap-1 flex-1 min-w-0 typography-meta" style={{ color: 'var(--tools-description)' }}>
+                    {!isStreaming && !isExpanded && summary ? (
+                        <span
+                            className="min-w-0 truncate typography-meta"
+                            style={{ color: 'var(--tools-description)', opacity: 0.8 }}
                             title={summary}
                         >
                             {summary}
                         </span>
                     ) : (
-                        <span className="flex-1" />
+                        <span className="min-w-0 flex-1" />
                     )}
-
-                    {/* Duration — counting up while live, final value when done */}
-                    {showDuration && typeof timeStart === 'number' ? (
-                        <span className="flex-shrink-0 tabular-nums typography-meta text-muted-foreground/80">
-                            <LiveDuration
-                                start={timeStart}
-                                end={timeEnd}
-                                active={typeof timeEnd !== 'number'}
-                            />
-                        </span>
-                    ) : null}
                 </div>
-            </Button>
+            </div>
 
             {/* Expanded content — left border matching ToolPart */}
             {isExpanded && (
@@ -266,6 +260,9 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
                         as="div"
                         outerClassName="max-h-80"
                         className="p-0"
+                        useScrollShadow
+                        scrollShadowSize={36}
+                        userIntentOnly
                     >
                         <div data-message-text-export-source="true">
                             <MarkdownRenderer
@@ -326,7 +323,6 @@ const ReasoningPart = React.memo(({
             onContentChange={onContentChange}
             blockId={part.id || `${messageId}-reasoning`}
             time={time}
-            showDuration={chatRenderMode !== 'sorted'}
             isStreaming={isStreaming}
         />
     );
@@ -404,7 +400,6 @@ export const MergedReasoningPart = React.memo(({
             onContentChange={onContentChange}
             blockId={blockId}
             time={mergedTime}
-            showDuration={chatRenderMode !== 'sorted'}
             isStreaming={isStreaming}
         />
     );
