@@ -24,7 +24,6 @@ export const createBootstrapRuntime = (dependencies) => {
       tunnelAuthController,
       readSettingsFromDiskMigrated,
       normalizeTunnelSessionTtlMs,
-      resolveZenModel,
       sayTTSCapability,
       ensurePushInitialized,
       ensureGlobalWatcherStarted,
