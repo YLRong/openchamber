@@ -1782,8 +1782,16 @@ function powershellQuote(value) {
   return `'${String(value).replace(/'/g, "''")}'`;
 }
 
-function envFileQuote(value) {
+function startupEnvFileQuote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function systemdEnvFileQuote(value) {
+  return `"${String(value)
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/`/g, '\\`')
+    .replace(/\$/g, '\\$')}"`;
 }
 
 function getStartupEnvFilePath() {
@@ -1820,31 +1828,57 @@ function collectStartupEnv(options = {}) {
 function shouldPersistStartupEnv(key, value) {
   if (typeof key !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return false;
   if (typeof value !== 'string') return false;
+  if (/[\r\n]/.test(value)) return false;
 
   // These are shell/session implementation details, not app configuration.
   const volatileKeys = new Set([
     '_',
+    'BASH_ENV',
+    'COLUMNS',
+    'CONDA_DEFAULT_ENV',
+    'CONDA_PREFIX',
+    'CONDA_PROMPT_MODIFIER',
+    'CONDA_SHLVL',
+    'ENV',
+    'HISTFILE',
+    'HISTFILESIZE',
+    'HISTSIZE',
+    'LINES',
     'OLDPWD',
+    'PROMPT',
+    'PROMPT_COMMAND',
+    'PS1',
+    'PS2',
+    'PS3',
+    'PS4',
     'PWD',
+    'PYENV_VERSION',
     'SHLVL',
     'TERM',
     'TERM_PROGRAM',
     'TERM_PROGRAM_VERSION',
     'TTY',
+    'VIRTUAL_ENV',
+    'VIRTUAL_ENV_PROMPT',
   ]);
   return !volatileKeys.has(key);
 }
 
-function writeStartupEnvFile(options = {}) {
+function writeStartupEnvFile(options = {}, fileOptions = {}) {
   const envFilePath = getStartupEnvFilePath();
   const lines = [];
   const env = collectStartupEnv(options);
+  const quoteValue = typeof fileOptions.quoteValue === 'function' ? fileOptions.quoteValue : startupEnvFileQuote;
   for (const [key, value] of Object.entries(env)) {
-    lines.push(`${key}=${envFileQuote(value)}`);
+    lines.push(`${key}=${quoteValue(value)}`);
   }
   fs.mkdirSync(path.dirname(envFilePath), { recursive: true, mode: 0o700 });
   fs.writeFileSync(envFilePath, lines.length > 0 ? `${lines.join('\n')}\n` : '', { mode: 0o600 });
   return envFilePath;
+}
+
+function removeStartupEnvFile() {
+  try { fs.unlinkSync(getStartupEnvFilePath()); } catch {}
 }
 
 function resolveCliEntrypoint() {
@@ -1987,7 +2021,7 @@ function enableStartupService(options = {}) {
   }
 
   if (paths.platform === 'macos') {
-    writeStartupEnvFile(options);
+    removeStartupEnvFile();
     fs.mkdirSync(path.dirname(paths.servicePath), { recursive: true, mode: 0o700 });
     fs.mkdirSync(path.join(os.homedir(), 'Library', 'Logs', 'OpenChamber'), { recursive: true, mode: 0o700 });
     fs.writeFileSync(paths.servicePath, buildMacosLaunchAgent(options), { mode: 0o600 });
@@ -1998,7 +2032,7 @@ function enableStartupService(options = {}) {
   }
 
   if (paths.platform === 'linux') {
-    writeStartupEnvFile(options);
+    writeStartupEnvFile(options, { quoteValue: systemdEnvFileQuote });
     fs.mkdirSync(path.dirname(paths.servicePath), { recursive: true, mode: 0o700 });
     fs.writeFileSync(paths.servicePath, buildSystemdUserService(options), { mode: 0o600 });
     runStartupCommand('systemctl', ['--user', 'daemon-reload']);
@@ -5086,6 +5120,12 @@ const commands = {
     }
 
     const result = { action: normalized, ...status };
+    if (!result.supported) {
+      throw new TunnelCliError(
+        `Startup integration is not supported on ${result.platform}.`,
+        EXIT_CODE.USAGE_ERROR
+      );
+    }
     if (normalized === 'enable' && result.activeState === 'failed') {
       throw new TunnelCliError(
         'Startup service was installed but failed to start. Run `journalctl --user -u openchamber.service -n 80 --no-pager` for details.',
@@ -5103,11 +5143,6 @@ const commands = {
     }
 
     clackIntro('OpenChamber Startup');
-    if (!result.supported) {
-      logStatus('error', `unsupported platform: ${result.platform}`);
-      clackOutro('failed');
-      return;
-    }
     logStatus(result.enabled ? 'success' : 'info', `startup ${result.enabled ? 'enabled' : 'disabled'}`, result.servicePath || undefined);
     if (typeof result.activeState === 'string') {
       logStatus(result.active ? 'success' : result.activeState === 'failed' ? 'error' : 'warning', `service ${result.activeState}`);
