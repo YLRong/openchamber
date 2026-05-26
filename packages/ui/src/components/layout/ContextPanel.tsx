@@ -220,6 +220,25 @@ const clampWidth = (width: number): number => {
   return Math.min(CONTEXT_PANEL_MAX_WIDTH, Math.max(CONTEXT_PANEL_MIN_WIDTH, Math.round(width)));
 };
 
+const getAvailablePanelWidth = (panel: HTMLElement | null): number | null => {
+  const parentWidth = panel?.parentElement?.clientWidth;
+  if (!parentWidth || parentWidth <= 0) {
+    return null;
+  }
+
+  return parentWidth;
+};
+
+const clampWidthToAvailableSpace = (width: number, panel: HTMLElement | null): number => {
+  const clampedWidth = clampWidth(width);
+  const availableWidth = getAvailablePanelWidth(panel);
+  if (availableWidth === null) {
+    return clampedWidth;
+  }
+
+  return Math.min(clampedWidth, Math.max(1, availableWidth));
+};
+
 const getRelativePathLabel = (filePath: string | null, directory: string): string => {
   if (!filePath) {
     return '';
@@ -264,7 +283,7 @@ const getFileNameFromPath = (path: string | null): string | null => {
 };
 
 const getTabLabel = (
-  tab: { mode: ContextPanelMode; label: string | null; targetPath: string | null },
+  tab: { mode: ContextPanelMode; label: string | null; targetPath: string | null; stagedDiff?: boolean },
   t: TranslateFn
 ): string => {
   if (tab.label) {
@@ -286,6 +305,10 @@ const getTabLabel = (
       }
     }
     return t('contextPanel.mode.preview');
+  }
+
+  if (tab.mode === 'diff') {
+    return tab.stagedDiff ? t('contextPanel.mode.stagedDiff') : t('contextPanel.mode.workingDiff');
   }
 
   return getModeLabel(tab.mode, t);
@@ -1554,7 +1577,6 @@ export const ContextPanel: React.FC = () => {
   const setContextPanelWidth = useUIStore((state) => state.setContextPanelWidth);
   const setActiveContextPanelTab = useUIStore((state) => state.setActiveContextPanelTab);
   const reorderContextPanelTabs = useUIStore((state) => state.reorderContextPanelTabs);
-  const setPendingDiffFile = useUIStore((state) => state.setPendingDiffFile);
   const setSelectedFilePath = useFilesViewTabsStore((state) => state.setSelectedPath);
   const openContextPreview = useUIStore((state) => state.openContextPreview);
   const { themeMode, lightThemeId, darkThemeId, currentTheme } = useThemeSystem();
@@ -1594,7 +1616,7 @@ export const ContextPanel: React.FC = () => {
       return;
     }
 
-    panel.style.setProperty('--oc-context-panel-width', `${nextWidth}px`);
+    panel.style.setProperty('--oc-context-panel-width', `${clampWidthToAvailableSpace(nextWidth, panel)}px`);
   }, []);
 
   const handleResizeStart = React.useCallback((event: React.PointerEvent) => {
@@ -1623,7 +1645,7 @@ export const ContextPanel: React.FC = () => {
     }
 
     const delta = startXRef.current - event.clientX;
-    const nextWidth = clampWidth(startWidthRef.current + delta);
+    const nextWidth = clampWidthToAvailableSpace(startWidthRef.current + delta, panelRef.current);
     if (resizingWidthRef.current === nextWidth) {
       return;
     }
@@ -1643,7 +1665,7 @@ export const ContextPanel: React.FC = () => {
       // ignore
     }
 
-    const finalWidth = resizingWidthRef.current ?? width;
+    const finalWidth = clampWidthToAvailableSpace(resizingWidthRef.current ?? width, panelRef.current);
     setIsResizing(false);
     activeResizePointerIDRef.current = null;
     resizingWidthRef.current = null;
@@ -1690,10 +1712,7 @@ export const ContextPanel: React.FC = () => {
       return;
     }
 
-    if (activeTab.mode === 'diff' && activeTab.targetPath) {
-      setPendingDiffFile(activeTab.targetPath);
-    }
-  }, [activeTab, directoryKey, setPendingDiffFile, setSelectedFilePath]);
+  }, [activeTab, directoryKey, setSelectedFilePath]);
 
   const activeChatTabID = activeTab?.mode === 'chat' ? activeTab.id : null;
 
@@ -1797,7 +1816,18 @@ export const ContextPanel: React.FC = () => {
   }), [effectiveDirectory, t, tabs]);
 
   const activeNonChatContent = activeTab?.mode === 'diff'
-    ? <DiffView hideStackedFileSidebar stackedDefaultCollapsedAll hideFileSelector pinSelectedFileHeaderToTopOnNavigate showOpenInEditorAction />
+    ? (
+      <DiffView
+        key={activeTab.id}
+        hideStackedFileSidebar
+        stackedDefaultCollapsedAll
+        hideFileSelector
+        pinSelectedFileHeaderToTopOnNavigate
+        showOpenInEditorAction
+        diffScope={activeTab.stagedDiff ? 'staged' : 'working'}
+        targetFilePath={activeTab.targetPath}
+      />
+    )
     : activeTab?.mode === 'context'
         ? <ContextPanelContent />
         : activeTab?.mode === 'plan'
@@ -1828,7 +1858,7 @@ export const ContextPanel: React.FC = () => {
   const isFileTabActive = activeTab?.mode === 'file';
 
   const header = (
-    <header className="flex h-8 items-stretch border-b border-transparent">
+    <header className="flex h-10 items-stretch border-b border-transparent">
       <SortableTabsStrip
         items={tabItems}
         activeId={activeTab?.id ?? null}
@@ -1892,9 +1922,9 @@ export const ContextPanel: React.FC = () => {
         maxWidth: '100%',
       }
     : {
-        width: 'var(--oc-context-panel-width)',
-        minWidth: 'var(--oc-context-panel-width)',
-        maxWidth: 'var(--oc-context-panel-width)',
+        width: 'min(var(--oc-context-panel-width), 100%)',
+        minWidth: `min(${CONTEXT_PANEL_MIN_WIDTH}px, 100%)`,
+        maxWidth: '100%',
         ['--oc-context-panel-width' as string]: `${isResizing ? (resizingWidthRef.current ?? width) : width}px`,
       };
 

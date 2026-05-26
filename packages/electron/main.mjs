@@ -20,6 +20,24 @@ const isDev = process.env.OPENCHAMBER_ELECTRON_DEV === '1' || !app.isPackaged;
 
 const DEEP_LINK_PROTOCOL = 'openchamber';
 const APP_USER_MODEL_ID = 'dev.openchamber.desktop';
+const BACKGROUND_START_ARG = '--background';
+
+const readLoginItemSettings = () => {
+  if (process.platform !== 'darwin') return null;
+  try {
+    return app.getLoginItemSettings();
+  } catch {
+    return null;
+  }
+};
+
+const shouldStartInBackground = (loginItemSettings = readLoginItemSettings()) => {
+  return (
+    process.argv.includes(BACKGROUND_START_ARG) ||
+    loginItemSettings?.wasOpenedAtLogin === true ||
+    loginItemSettings?.wasOpenedAsHidden === true
+  );
+};
 
 if (!app.requestSingleInstanceLock()) {
   app.exit(0);
@@ -821,6 +839,7 @@ const spawnLocalServer = async () => {
   // warning and persists the flag via /api/config/settings.
   const lanAccessEnabled = settings.desktopLanAccessEnabled === true;
   const bindHost = lanAccessEnabled ? '0.0.0.0' : '127.0.0.1';
+  const desktopUiPassword = typeof settings.desktopUiPassword === 'string' ? settings.desktopUiPassword.trim() : '';
 
   // Probe before starting the server — main() in the server module sets up a
   // lot of global state before binding, and calling it twice after a listen
@@ -845,6 +864,11 @@ const spawnLocalServer = async () => {
   process.env.OPENCHAMBER_DIST_DIR = resolveWebDistDir();
   process.env.OPENCHAMBER_RUNTIME = 'desktop';
   process.env.OPENCHAMBER_DESKTOP_NOTIFY = 'true';
+  if (desktopUiPassword) {
+    process.env.OPENCHAMBER_UI_PASSWORD = desktopUiPassword;
+  } else {
+    delete process.env.OPENCHAMBER_UI_PASSWORD;
+  }
   process.env.OPENCHAMBER_SKIP_API_COMPRESSION = process.env.OPENCHAMBER_SKIP_API_COMPRESSION || 'true';
   process.env.NO_PROXY = process.env.NO_PROXY || 'localhost,127.0.0.1';
   process.env.no_proxy = process.env.no_proxy || 'localhost,127.0.0.1';
@@ -854,6 +878,7 @@ const spawnLocalServer = async () => {
   const handle = await startWebUiServer({
     port: chosenPort,
     host: bindHost,
+    uiPassword: desktopUiPassword || null,
     attachSignals: false,
     exitOnShutdown: false,
     onDesktopNotification: (payload) => maybeShowNativeNotification(payload),
@@ -1463,6 +1488,21 @@ const activateMainWindow = async (url, localOrigin, bootOutcome) => {
     url,
   });
   return state.mainWindow;
+};
+
+const openMainWindow = async () => {
+  if (!state.localOrigin) {
+    const { initialUrl, localOrigin, bootOutcome } = await resolveInitialUrl();
+    return activateMainWindow(initialUrl, localOrigin, bootOutcome);
+  }
+
+  const config = readDesktopHostsConfig();
+  const localUiUrl = state.sidecarUrl || state.localOrigin;
+  const host = config.defaultHostId && config.defaultHostId !== LOCAL_HOST_ID
+    ? config.hosts.find((entry) => entry.id === config.defaultHostId)
+    : null;
+  const targetUrl = host?.url && !state.unreachableHosts.has(host.url) ? host.url : localUiUrl;
+  return activateMainWindow(targetUrl, state.localOrigin, state.bootOutcome);
 };
 
 const createAdditionalWindow = async (url) => {
@@ -2153,6 +2193,24 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     case 'desktop_get_app_version':
       return APP_VERSION;
 
+    case 'desktop_get_launch_at_login': {
+      if (process.platform !== 'darwin') return { supported: false, enabled: false };
+      const settings = app.getLoginItemSettings();
+      return { supported: true, enabled: settings.openAtLogin === true };
+    }
+
+    case 'desktop_set_launch_at_login': {
+      if (process.platform !== 'darwin') return { supported: false, enabled: false };
+      const enabled = args.enabled === true;
+      app.setLoginItemSettings({
+        openAtLogin: enabled,
+        openAsHidden: enabled,
+        args: enabled ? [BACKGROUND_START_ARG] : [],
+      });
+      const settings = app.getLoginItemSettings();
+      return { supported: true, enabled: settings.openAtLogin === true };
+    }
+
     case 'desktop_browser_capture_page': {
       const wcId = Number.isFinite(args.webContentsId) ? Math.trunc(args.webContentsId) : null;
       if (wcId === null || wcId < 0) throw new Error('webContentsId is required');
@@ -2734,7 +2792,7 @@ const buildMacMenu = () => {
     {
       label: app.name,
       submenu: [
-        { role: 'about' },
+        { label: 'About OpenChamber', click: () => dispatchAction('about') },
         {
           label: 'Check for Updates',
           click: () => dispatchCheckForUpdates(),
@@ -2781,10 +2839,12 @@ const buildMacMenu = () => {
     {
       label: 'View',
       submenu: [
-        { label: 'Git', accelerator: 'Cmd+G', click: () => dispatchAction('open-git-tab') },
-        { label: 'Diff', accelerator: 'Cmd+E', click: () => dispatchAction('open-diff-tab') },
-        { label: 'Files', click: () => dispatchAction('open-files-tab') },
-        { label: 'Terminal', accelerator: 'Cmd+T', click: () => dispatchAction('open-terminal-tab') },
+        { label: 'Toggle Right Sidebar', accelerator: 'Cmd+B', click: () => dispatchAction('toggle-right-sidebar') },
+        { label: 'Open Git Sidebar', accelerator: 'Cmd+Shift+G', click: () => dispatchAction('open-right-sidebar-git') },
+        { label: 'Open Files Sidebar', accelerator: 'Cmd+Shift+F', click: () => dispatchAction('open-right-sidebar-files') },
+        { type: 'separator' },
+        { label: 'Toggle Terminal Dock', accelerator: 'Cmd+J', click: () => dispatchAction('toggle-terminal') },
+        { label: 'Toggle Terminal Expanded', accelerator: 'Cmd+Shift+J', click: () => dispatchAction('toggle-terminal-expanded') },
         { type: 'separator' },
         { label: 'Light Theme', click: () => dispatchAction('theme-light') },
         { label: 'Dark Theme', click: () => dispatchAction('theme-dark') },
@@ -3019,12 +3079,19 @@ app.on('second-instance', (_event, argv) => {
     ? argv.filter((arg) => typeof arg === 'string' && arg.startsWith(`${DEEP_LINK_PROTOCOL}://`))
     : [];
   if (urls.length > 0) handleDeepLinks(urls);
-  focusForegroundWindow();
+  if (BrowserWindow.getAllWindows().length > 0) {
+    focusForegroundWindow();
+  } else {
+    void openMainWindow();
+  }
 });
 
 app.on('open-url', (event, url) => {
   event.preventDefault();
   handleDeepLinks([url]);
+  if (BrowserWindow.getAllWindows().length === 0) {
+    void openMainWindow();
+  }
 });
 
 app.on('activate', async () => {
@@ -3038,23 +3105,20 @@ app.on('activate', async () => {
     return;
   }
 
-  if (state.localOrigin) {
-    const config = readDesktopHostsConfig();
-    const localUiUrl = state.sidecarUrl || state.localOrigin;
-    const host = config.defaultHostId && config.defaultHostId !== LOCAL_HOST_ID
-      ? config.hosts.find((entry) => entry.id === config.defaultHostId)
-      : null;
-    const targetUrl = host?.url && !state.unreachableHosts.has(host.url) ? host.url : localUiUrl;
-    await createAdditionalWindow(targetUrl);
-  }
+  await openMainWindow();
 });
 
 app.whenReady().then(async () => {
+  const loginItemSettings = readLoginItemSettings();
+  const isBackgroundStart = shouldStartInBackground(loginItemSettings);
   log.info('[electron] app starting', {
     version: APP_VERSION,
     packaged: app.isPackaged,
     platform: process.platform,
     arch: process.arch,
+    argv: process.argv,
+    isBackgroundStart,
+    loginItemSettings,
   });
   nativeTheme.themeSource = readThemeSource();
   setupAutoUpdater();
@@ -3063,6 +3127,24 @@ app.whenReady().then(async () => {
     Menu.setApplicationMenu(buildMacMenu());
   } else {
     Menu.setApplicationMenu(buildAutoHiddenMenu());
+  }
+
+  if (process.platform === 'darwin' && app.isPackaged) {
+    const openAtLogin = loginItemSettings?.openAtLogin === true;
+    app.setLoginItemSettings({
+      openAtLogin,
+      openAsHidden: openAtLogin,
+      args: openAtLogin ? [BACKGROUND_START_ARG] : [],
+    });
+  }
+
+  if (isBackgroundStart) {
+    const { localOrigin, bootOutcome } = await resolveInitialUrl();
+    state.localOrigin = localOrigin;
+    state.bootOutcome = bootOutcome ?? null;
+    state.initScript = buildInitScript(localOrigin, state.bootOutcome);
+    log.info('[electron] started in background without window');
+    return;
   }
 
   state.mainWindow = createBrowserWindow({
