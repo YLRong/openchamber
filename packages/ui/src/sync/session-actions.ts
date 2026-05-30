@@ -278,13 +278,10 @@ export async function createSession(
   parentID?: string | null,
 ): Promise<Session | null> {
   try {
-    const result = await sdk().session.create({
-      directory: directoryOverride ?? dir(),
+    const session = await opencodeClient.createSession({
       title,
       parentID: parentID ?? undefined,
-    })
-    const session = result.data
-    if (!session) return null
+    }, directoryOverride ?? dir())
 
       const sessionDirectory = (session as { directory?: string }).directory ?? directoryOverride ?? null
       // Pre-populate routing index so SSE events arriving before session.created
@@ -356,8 +353,7 @@ export async function deleteSession(sessionId: string, _options?: Record<string,
     ui.setCurrentSession(null)
   }
   try {
-    const result = await sdk().session.delete({ sessionID: sessionId, directory: sessionDirectory })
-    const deleted = assertSdkSuccess(result, "session.delete")
+    const deleted = await opencodeClient.deleteSession(sessionId, sessionDirectory)
     if (deleted !== true) {
       throw new Error("session.delete failed: server did not confirm deletion")
     }
@@ -380,8 +376,7 @@ export async function deleteSessionInDirectory(sessionId: string, directory: str
   const ui = useSessionUIStore.getState()
   if (ui.currentSessionId === sessionId) ui.setCurrentSession(null)
   try {
-    const result = await sdk().session.delete({ sessionID: sessionId, directory })
-    const deleted = assertSdkSuccess(result, "session.delete")
+    const deleted = await opencodeClient.deleteSession(sessionId, directory)
     if (deleted !== true) {
       throw new Error("session.delete failed: server did not confirm deletion")
     }
@@ -406,8 +401,7 @@ export async function archiveSession(sessionId: string): Promise<boolean> {
     ui.setCurrentSession(null)
   }
   try {
-    const result = await sdk().session.update({ sessionID: sessionId, directory: sessionDirectory, time: { archived: archivedAt } })
-    const archived = assertSdkSuccess(result, "session.update")
+    const archived = await opencodeClient.updateSession(sessionId, { time: { archived: archivedAt } }, sessionDirectory)
     if (!archived) {
       throw new Error("session.update failed: server did not return the archived session")
     }
@@ -423,28 +417,24 @@ export async function archiveSession(sessionId: string): Promise<boolean> {
 
 export async function updateSessionTitle(sessionId: string, title: string): Promise<void> {
   const sessionDirectory = getSessionDirectory(sessionId)
-  const result = await sdk().session.update({ sessionID: sessionId, directory: sessionDirectory, title })
-  if (result.data) {
-    useGlobalSessionsStore.getState().upsertSession(result.data)
-  }
+  const session = await opencodeClient.updateSession(sessionId, { title }, sessionDirectory)
+  useGlobalSessionsStore.getState().upsertSession(session)
 }
 
 export async function shareSession(sessionId: string): Promise<Session | null> {
   const sessionDirectory = getSessionDirectory(sessionId)
   const result = await sdk().session.share({ sessionID: sessionId, directory: sessionDirectory })
-  if (result.data) {
-    useGlobalSessionsStore.getState().upsertSession(result.data)
-  }
-  return result.data ?? null
+  const session = assertSdkData(result, "session.share")
+  useGlobalSessionsStore.getState().upsertSession(session)
+  return session
 }
 
 export async function unshareSession(sessionId: string): Promise<Session | null> {
   const sessionDirectory = getSessionDirectory(sessionId)
   const result = await sdk().session.unshare({ sessionID: sessionId, directory: sessionDirectory })
-  if (result.data) {
-    useGlobalSessionsStore.getState().upsertSession(result.data)
-  }
-  return result.data ?? null
+  const session = assertSdkData(result, "session.unshare")
+  useGlobalSessionsStore.getState().upsertSession(session)
+  return session
 }
 
 // ---------------------------------------------------------------------------
@@ -594,12 +584,7 @@ export async function respondToPermission(
   const directory = resolveDirectoryForBlockingRequest("permission", sessionId, requestId)
     || getSessionDirectory(sessionId)
     || dir()
-  const result = await getRequestReplyClient("permission", sessionId, requestId).permission.reply({
-    requestID: requestId,
-    reply: response,
-    ...(directory ? { directory } : {}),
-  })
-  if (!result.data) {
+  if (await opencodeClient.replyToPermission(requestId, response, { directory }) !== true) {
     throw new Error("Permission reply failed")
   }
 }
@@ -612,12 +597,7 @@ export async function dismissPermission(
   const directory = resolveDirectoryForBlockingRequest("permission", sessionId, requestId)
     || getSessionDirectory(sessionId)
     || dir()
-  const result = await getRequestReplyClient("permission", sessionId, requestId).permission.reply({
-    requestID: requestId,
-    reply: "reject",
-    ...(directory ? { directory } : {}),
-  })
-  if (!result.data) {
+  if (await opencodeClient.replyToPermission(requestId, "reject", { directory }) !== true) {
     throw new Error("Permission dismissal failed")
   }
 }
@@ -635,12 +615,7 @@ export async function respondToQuestion(
   const directory = resolveDirectoryForBlockingRequest("question", sessionId, requestId)
     || getSessionDirectory(sessionId)
     || dir()
-  const result = await getRequestReplyClient("question", sessionId, requestId).question.reply({
-    requestID: requestId,
-    answers: answers as Array<Array<string>>,
-    ...(directory ? { directory } : {}),
-  })
-  if (!result.data) {
+  if (await opencodeClient.replyToQuestion(requestId, answers, directory) !== true) {
     throw new Error("Question reply failed")
   }
 }
@@ -657,7 +632,7 @@ export async function rejectQuestion(
     requestID: requestId,
     ...(directory ? { directory } : {}),
   })
-  if (!result.data) {
+  if (assertSdkData(result, "question.reject") !== true) {
     throw new Error("Question rejection failed")
   }
 }
@@ -672,7 +647,7 @@ export async function rejectQuestion(
  * 1. Abort if session is busy
  * 2. Extract text from the target message for prompt restoration
  * 3. Optimistically set revert marker so messages hide immediately
- * 4. Call SDK session.revert() and merge returned session
+ * 4. Call the runtime revert endpoint and merge returned session
  * 5. Set pendingInputText so the reverted message text appears in the input
  */
 export async function revertToMessage(sessionId: string, messageId: string): Promise<void> {
@@ -842,7 +817,7 @@ export async function unrevertSession(sessionId: string): Promise<void> {
  * Fork from a user message.
  *
  * 1. Extract text from the message for input restoration
- * 2. Call SDK session.fork()
+ * 2. Call the runtime fork endpoint
  * 3. Insert the new session into the child store (so sidebar updates immediately)
  * 4. Switch to new session and set pending input text
  */
@@ -863,10 +838,7 @@ export async function forkFromMessage(sessionId: string, messageId: string): Pro
     .trim()
   const fileParts = parts.filter((p) => p.type === "file" && !isSyntheticPart(p)) as Array<Record<string, unknown>>
 
-  const result = await sdk().session.fork({ sessionID: sessionId, directory, messageID: messageId })
-  if (!result.data) return
-
-  const forkedSession = result.data
+  const forkedSession = await opencodeClient.forkSession(sessionId, messageId, directory)
 
   // Insert new session into child store so sidebar updates immediately
   const current = store.getState()

@@ -63,6 +63,14 @@ mock.module("@/lib/opencode/client", () => ({
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     getScopedSdkClient: (_: string) => mockScopedClient,
     getDirectory: () => "/test/project",
+    replyToPermission: mock((requestId: string, reply: string, options?: { directory?: string | null }) => {
+      replyCalls.push({ method: "permission.reply", params: { requestID: requestId, reply, directory: options?.directory } })
+      return Promise.resolve(true)
+    }),
+    replyToQuestion: mock((requestId: string, answers: string[] | string[][], directory?: string | null) => {
+      replyCalls.push({ method: "question.reply", params: { requestID: requestId, answers, directory } })
+      return Promise.resolve(true)
+    }),
     revertSession: mock((sessionId: string, messageId: string, partId?: string, directory?: string | null) => {
       replyCalls.push({
         method: "session.revert",

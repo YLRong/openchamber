@@ -421,15 +421,20 @@ export function useSync() {
         // Fetch session info if needed
         if (!hasSession || force) {
           try {
-            const result = await retry(() => sdk.session.get({ sessionID, directory }))
-            if (result.data) {
+            const result = await retry(async () => {
+              const response = await sdk.session.get({ sessionID, directory })
+              assertSdkSuccess(response, "session.get")
+              return response
+            })
+            const session = result.data
+            if (session) {
               const s = store.getState()
               const sessions = [...s.session]
               const idx = Binary.search(sessions, sessionID, (s) => s.id)
               if (idx.found) {
-                sessions[idx.index] = result.data
+                sessions[idx.index] = session
               } else {
-                sessions.splice(idx.index, 0, result.data)
+                sessions.splice(idx.index, 0, session)
               }
               store.setState({ session: sessions })
             }

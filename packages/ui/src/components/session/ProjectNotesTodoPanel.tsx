@@ -497,7 +497,7 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
             return;
           }
           sessionId = created.id;
-          directoryHint = null;
+          directoryHint = created.path;
         } else {
           const session = await createSession(undefined, projectRef.path, null);
           if (!session?.id) {

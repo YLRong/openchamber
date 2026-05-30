@@ -197,7 +197,7 @@ describe('routeMessage directory scoping', () => {
     let activeDirectory = '/current/project';
     const originalWithDirectory = opencodeClient.withDirectory;
     const originalGetDirectory = opencodeClient.getDirectory;
-    const originalGetSdkClient = opencodeClient.getSdkClient;
+    const originalShellSession = opencodeClient.shellSession;
 
     opencodeClient.withDirectory = async (directory, fn) => {
       calls.push({ method: 'withDirectory', directory });
@@ -210,14 +210,10 @@ describe('routeMessage directory scoping', () => {
       }
     };
     opencodeClient.getDirectory = () => activeDirectory;
-    opencodeClient.getSdkClient = () => ({
-      session: {
-        shell: async (params) => {
-          calls.push({ method: 'session.shell', params });
-          return {};
-        },
-      },
-    });
+    opencodeClient.shellSession = async (params) => {
+      calls.push({ method: 'session.shell', params });
+      return { info: {}, parts: [] };
+    };
 
     try {
       await routeMessage({
@@ -231,7 +227,7 @@ describe('routeMessage directory scoping', () => {
     } finally {
       opencodeClient.withDirectory = originalWithDirectory;
       opencodeClient.getDirectory = originalGetDirectory;
-      opencodeClient.getSdkClient = originalGetSdkClient;
+      opencodeClient.shellSession = originalShellSession;
     }
 
     expect(calls[0]).toEqual({ method: 'withDirectory', directory: '/session/project' });

@@ -64,6 +64,34 @@ const syncGlobal = globalThis as SyncGlobal
 const SyncContext = syncGlobal[SYNC_CONTEXT_GLOBAL_KEY] ?? createContext<SyncSystem | null>(null)
 syncGlobal[SYNC_CONTEXT_GLOBAL_KEY] = SyncContext
 
+type SdkResult<T> = {
+  data?: T
+  error?: unknown
+  response?: {
+    status?: number
+    headers?: { get?: (name: string) => string | null }
+  }
+}
+
+function formatSdkError(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (typeof error === "string") return error
+  if (error && typeof error === "object" && "message" in error && typeof (error as { message?: unknown }).message === "string") {
+    return (error as { message: string }).message
+  }
+  try {
+    return JSON.stringify(error)
+  } catch {
+    return String(error)
+  }
+}
+
+function assertSdkSuccess<T>(result: SdkResult<T>, operation: string): T | undefined {
+  if (!result.error) return result.data
+  const status = result.response?.status
+  throw new Error(`${operation} failed${status ? ` (${status})` : ""}: ${formatSdkError(result.error)}`)
+}
+
 function useSyncSystem() {
   const ctx = useContext(SyncContext)
   if (!ctx) throw new Error("useSyncSystem must be used within <SyncProvider>")
@@ -196,9 +224,11 @@ async function materializeSessionFromServer(
   store: StoreApi<DirectoryStore>,
 ) {
   const scopedClient = opencodeClient.getScopedSdkClient(directory)
-  const result = await retry(() =>
-    scopedClient.session.messages({ sessionID, limit: SESSION_MATERIALIZATION_MESSAGE_LIMIT }),
-  )
+  const result = await retry(async () => {
+    const response = await scopedClient.session.messages({ sessionID, limit: SESSION_MATERIALIZATION_MESSAGE_LIMIT })
+    assertSdkSuccess(response, "session.messages")
+    return response
+  })
   const records = (result.data ?? []).filter((record: { info?: { id?: string } }) => !!record?.info?.id)
   if (records.length === 0) return
   const cursor = result.response?.headers?.get?.("x-next-cursor") ?? undefined
@@ -889,16 +919,26 @@ export async function resyncBlockingRequestsForDirectory(
     const autoAcceptingSessionIds = Object.keys(grouped).filter((sessionId) => permissionStore.isSessionAutoAccepting(sessionId))
 
     if (autoAcceptingSessionIds.length > 0) {
-      await Promise.all(
-        autoAcceptingSessionIds.flatMap((sessionId) =>
-          (grouped[sessionId] ?? []).map((permission) =>
-            sessionActions.respondToPermission(permission.sessionID, permission.id, "once").catch(() => undefined),
-          ),
-        ),
-      )
+      const acceptedIdsBySession = new Map<string, Set<string>>()
+      await Promise.all(autoAcceptingSessionIds.flatMap((sessionId) =>
+        (grouped[sessionId] ?? []).map(async (permission) => {
+          try {
+            await sessionActions.respondToPermission(permission.sessionID, permission.id, "once")
+            const accepted = acceptedIdsBySession.get(sessionId) ?? new Set<string>()
+            accepted.add(permission.id)
+            acceptedIdsBySession.set(sessionId, accepted)
+          } catch {
+            // Keep failed auto-accept permissions in UI state so the user can act.
+          }
+        }),
+      ))
 
       for (const sessionId of autoAcceptingSessionIds) {
-        delete grouped[sessionId]
+        const acceptedIds = acceptedIdsBySession.get(sessionId)
+        if (!acceptedIds) continue
+        const remaining = (grouped[sessionId] ?? []).filter((permission) => !acceptedIds.has(permission.id))
+        if (remaining.length > 0) grouped[sessionId] = remaining
+        else delete grouped[sessionId]
       }
     }
 
@@ -989,8 +1029,16 @@ async function resyncDirectoryAfterReconnect(
   const scopedClient = opencodeClient.getScopedSdkClient(directory)
   await Promise.all(candidateSessionIds.map(async (sessionId) => {
     const [sessionResponse, messageResponse] = await Promise.all([
-      scopedClient.session.get({ sessionID: sessionId }).catch(() => null),
-      scopedClient.session.messages({ sessionID: sessionId, limit: RECONNECT_MESSAGE_LIMIT }).catch(() => null),
+      retry(async () => {
+        const response = await scopedClient.session.get({ sessionID: sessionId })
+        assertSdkSuccess(response, "session.get")
+        return response
+      }).catch(() => null),
+      retry(async () => {
+        const response = await scopedClient.session.messages({ sessionID: sessionId, limit: RECONNECT_MESSAGE_LIMIT })
+        assertSdkSuccess(response, "session.messages")
+        return response
+      }).catch(() => null),
     ])
     const session = sessionResponse?.data
     const records = messageResponse?.data
@@ -1146,7 +1194,6 @@ function handleEvent(
     if (permissionStore.isSessionAutoAccepting(permission.sessionID)) {
       updateRoutingIndexFromEvent(routingIndex, resolvedDirectory, payload)
       void sessionActions.respondToPermission(permission.sessionID, permission.id, "once").catch(() => undefined)
-      return
     }
 
     const toastKey = getPermissionToastKey(permission.sessionID, permission.id)
@@ -2238,7 +2285,9 @@ export function useSessionMessageRecords(
 const _ensureMessagesLoading = new Set<string>()
 
 export function useEnsureSessionMessages(sessionID: string, directory?: string) {
-  const store = useDirectoryStore(directory)
+  const syncDirectory = useSyncDirectory()
+  const resolvedDirectory = directory ?? syncDirectory
+  const store = useDirectoryStore(resolvedDirectory)
 
   React.useEffect(() => {
     if (!sessionID) return
@@ -2249,8 +2298,7 @@ export function useEnsureSessionMessages(sessionID: string, directory?: string) 
     // Session doesn't exist — nothing to load
     if (!state.session.some((s) => s.id === sessionID)) return
 
-    const dir = directory ?? opencodeClient.getDirectory()
-    const loadingKey = `${dir ?? ""}:${sessionID}`
+    const loadingKey = `${resolvedDirectory}:${sessionID}`
     // Already loading this session for this directory
     if (_ensureMessagesLoading.has(loadingKey)) return
 
@@ -2258,14 +2306,14 @@ export function useEnsureSessionMessages(sessionID: string, directory?: string) 
 
     void (async () => {
       try {
-        await materializeSessionFromServer(dir ?? "", sessionID, store)
+        await materializeSessionFromServer(resolvedDirectory, sessionID, store)
       } catch {
         // Transient failure — next navigation or reconnect will retry
       } finally {
         _ensureMessagesLoading.delete(loadingKey)
       }
     })()
-  }, [sessionID, store, directory])
+  }, [sessionID, store, resolvedDirectory])
 }
 
 /**

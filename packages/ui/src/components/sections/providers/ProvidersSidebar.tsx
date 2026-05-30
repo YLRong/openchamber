@@ -62,6 +62,8 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
       const tasks = providers.map(async (provider) => {
         try {
           const query = directory ? `?directory=${encodeURIComponent(directory)}` : '';
+          // OpenChamber-only metadata endpoint: the SDK exposes provider data but
+          // not local auth/source-file provenance used by this settings sidebar.
           const response = await runtimeFetch(`/api/provider/${encodeURIComponent(provider.id)}/source${query}`, {
             method: 'GET',
             headers: { Accept: 'application/json' },

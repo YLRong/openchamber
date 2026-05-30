@@ -545,7 +545,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ targetPath = null }) => {
             return;
           }
           sessionId = created.id;
-          directoryHint = null;
+          directoryHint = created.path;
         } else {
           const sessionResult = await createSession(undefined, currentProjectRef.path, null);
           if (!sessionResult?.id) {
