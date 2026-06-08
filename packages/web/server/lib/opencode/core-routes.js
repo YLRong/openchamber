@@ -1,3 +1,5 @@
+import { readWorkspaceBootstrapStatus } from '../managed/workspace-bootstrap-status.js';
+
 const parseLoopbackUrl = (rawUrl) => {
   if (typeof rawUrl !== 'string') {
     return null;
@@ -64,6 +66,10 @@ export const registerServerStatusRoutes = (app, dependencies) => {
     process,
     openchamberVersion,
     runtimeName,
+    managedMode = 'none',
+    managedSessionId = null,
+    hubUrl = null,
+    workspaceDir = null,
     serverStartedAt,
     gracefulShutdown,
     getHealthSnapshot,
@@ -213,6 +219,9 @@ export const registerServerStatusRoutes = (app, dependencies) => {
     }
   };
 
+  const isManagedRuntime = managedMode === 'runtime';
+  const isManaged = isManagedRuntime;
+
   app.get('/health', (_req, res) => {
     res.json({
       status: 'ok',
@@ -221,6 +230,35 @@ export const registerServerStatusRoutes = (app, dependencies) => {
       runtime: runtimeName,
       compatibility,
       ...getHealthSnapshot(),
+    });
+  });
+
+  app.get('/managed/health', async (_req, res) => {
+    if (!isManagedRuntime) {
+      return res.status(404).json({ status: 'not_found' });
+    }
+    const snapshot = getHealthSnapshot();
+    const workspaceBootstrap = await readWorkspaceBootstrapStatus({ workspaceDir });
+    if (!snapshot.isOpenCodeReady) {
+      return res.status(503).json({
+        status: 'not_ready',
+        mode: managedMode,
+        ...(workspaceBootstrap ? { workspaceBootstrap } : {}),
+      });
+    }
+    if (workspaceBootstrap?.state === 'failed') {
+      return res.status(503).json({
+        status: 'not_ready',
+        mode: managedMode,
+        managedSessionId,
+        workspaceBootstrap,
+      });
+    }
+    return res.json({
+      status: 'ok',
+      mode: managedMode,
+      managedSessionId,
+      ...(workspaceBootstrap ? { workspaceBootstrap } : {}),
     });
   });
 
@@ -328,12 +366,49 @@ export const registerServerStatusRoutes = (app, dependencies) => {
   });
 
   app.get('/api/system/info', (_req, res) => {
-    res.json({
+    const response = {
       openchamberVersion,
       runtime: runtimeName,
       pid: process.pid,
       startedAt: serverStartedAt,
-    });
+    };
+
+    if (isManaged) {
+      response.mode = managedMode;
+      response.managed = true;
+      response.managedSessionId = managedSessionId;
+      response.hubUrl = hubUrl;
+      response.workspaceDir = workspaceDir;
+      response.features = {
+        tunnel: false,
+        desktop: false,
+        selfUpdate: false,
+        remoteInstances: false,
+      };
+    } else {
+      response.managed = false;
+    }
+
+    if (isManagedRuntime) {
+      readWorkspaceBootstrapStatus({ workspaceDir })
+        .then((workspaceBootstrap) => {
+          if (workspaceBootstrap) {
+            response.workspaceBootstrap = workspaceBootstrap;
+          }
+          res.json(response);
+        })
+        .catch((error) => {
+          response.workspaceBootstrap = {
+            state: 'failed',
+            reason: 'status_read_failed',
+            error: error instanceof Error ? error.message : String(error),
+          };
+          res.json(response);
+        });
+      return;
+    }
+
+    res.json(response);
   });
 
   // Allocates a best-effort free TCP port hint on 127.0.0.1.
@@ -733,7 +808,8 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
       req.path.startsWith('/api/text') ||
       req.path.startsWith('/api/voice') ||
       req.path.startsWith('/api/tts') ||
-      req.path.startsWith('/api/openchamber/tunnel')
+      req.path.startsWith('/api/openchamber/tunnel') ||
+      req.path.startsWith('/api/openchamber/runtime-message')
     ) {
       express.json({ limit: '50mb' })(req, res, next);
     } else if (req.path.startsWith('/api')) {

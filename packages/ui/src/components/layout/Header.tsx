@@ -37,7 +37,6 @@ import { UpdateDialog } from '@/components/ui/UpdateDialog';
 import { useDeviceInfo, useTabletStandalonePwaRuntime } from '@/lib/device';
 import { cn, hasModifier } from '@/lib/utils';
 import { McpDropdownContent } from '@/components/mcp/McpDropdown';
-import { McpIcon } from '@/components/icons/McpIcon';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { formatQuotaValueLabel, formatQuotaResetLabel, formatWindowLabel, QUOTA_PROVIDERS, calculatePace, calculateExpectedUsagePercent } from '@/lib/quota';
 import { UsageProgressBar } from '@/components/sections/usage/UsageProgressBar';
@@ -700,6 +699,7 @@ interface HeaderProps {
   onToggleRightDrawer?: () => void;
   leftDrawerOpen?: boolean;
   rightDrawerOpen?: boolean;
+  hideSessionControls?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -707,11 +707,11 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleRightDrawer,
   leftDrawerOpen,
   rightDrawerOpen,
+  hideSessionControls = false,
 }) => {
   const { t } = useI18n();
   const setSessionSwitcherOpen = useUIStore((state) => state.setSessionSwitcherOpen);
   const toggleSidebar = useUIStore((state) => state.toggleSidebar);
-  const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
   const toggleBottomTerminal = useUIStore((state) => state.toggleBottomTerminal);
   const toggleRightSidebar = useUIStore((state) => state.toggleRightSidebar);
   const openContextOverview = useUIStore((state) => state.openContextOverview);
@@ -1226,16 +1226,13 @@ export const Header: React.FC<HeaderProps> = ({
 
   const worktreeBadge = React.useMemo(() => {
     if (!worktreeAttachment) return null;
-    return formatSessionWorktreeBadge(worktreeAttachment, {
-      pending: t('gitView.empty.worktreeSetupInProgress'),
-    });
-  }, [t, worktreeAttachment]);
+    return formatSessionWorktreeBadge(worktreeAttachment);
+  }, [worktreeAttachment]);
 
   const worktreeBadgeKind = React.useMemo(() => {
     if (!worktreeAttachment) return null;
     if (worktreeAttachment.legacy) return 'legacy';
     if (worktreeAttachment.degraded) return 'degraded';
-    if (worktreeAttachment.worktreeStatus === 'pending') return 'pending';
     if (worktreeAttachment.worktreeStatus === 'missing') return 'missing';
     if (worktreeAttachment.worktreeStatus === 'invalid') return 'invalid';
     if (worktreeAttachment.attentionReason) return 'attention';
@@ -1409,13 +1406,16 @@ export const Header: React.FC<HeaderProps> = ({
   }, []);
 
   const handleOpenSessionSwitcher = React.useCallback(() => {
+    if (hideSessionControls) {
+      return;
+    }
     if (isMobile) {
       blurActiveElement();
       setSessionSwitcherOpen(!isSessionSwitcherOpen);
       return;
     }
     toggleSidebar();
-  }, [blurActiveElement, isMobile, isSessionSwitcherOpen, setSessionSwitcherOpen, toggleSidebar]);
+  }, [blurActiveElement, hideSessionControls, isMobile, isSessionSwitcherOpen, setSessionSwitcherOpen, toggleSidebar]);
 
   const handleOpenDraftMiniChat = React.useCallback(() => {
     void invokeDesktop('desktop_open_draft_mini_chat_window', {
@@ -1585,42 +1585,12 @@ export const Header: React.FC<HeaderProps> = ({
     onToggleRightDrawer?.();
   }, [onToggleRightDrawer, rightDrawerOpen]);
 
-  // Left padding the header needs to clear the OS window controls (macOS
-  // traffic lights / window-controls-overlay). When the sidebar is open this
-  // space is owned by the sidebar's top strip instead, so the header drops back
-  // to its normal content padding. The full value is published as
-  // `--oc-titlebar-left-inset` so the sidebar strip can mirror it.
-  const titlebarLeftInset = React.useMemo(() => {
-    if (isDesktopApp && isMacPlatform && !isDesktopWindowFullscreen) {
-      return '5.5rem';
+  const desktopPaddingClass = React.useMemo(() => {
+    if ((isDesktopApp && isMacPlatform && !isDesktopWindowFullscreen) || isTabletStandalonePwa) {
+      return 'pl-[5.5rem]';
     }
-    if (isTabletStandalonePwa) {
-      return 'max(calc(0.75rem + var(--oc-wco-left-inset, 0px)), 5.5rem)';
-    }
-    if ((!isDesktopApp || isWindowsElectronDesktop) && !isVSCode) {
-      return 'calc(0.75rem + var(--oc-wco-left-inset, 0px))';
-    }
-    return '0.75rem';
-  }, [isDesktopApp, isDesktopWindowFullscreen, isMacPlatform, isTabletStandalonePwa, isVSCode, isWindowsElectronDesktop]);
-
-  useEffect(() => {
-    if (typeof document === 'undefined') {
-      return;
-    }
-    document.documentElement.style.setProperty('--oc-titlebar-left-inset', titlebarLeftInset);
-  }, [titlebarLeftInset]);
-
-  // Space reserved on the header's left for the persistent overlay when the
-  // sidebar is collapsed (the overlay sits over the header then). Split into two
-  // spacers so the strip stays a window drag area while the buttons stay
-  // clickable: a drag region for the window-controls inset (traffic lights) and
-  // a no-drag carve under the control cluster. Both animate so the session title
-  // slides in/out in lockstep with the sidebar. When the sidebar is open the
-  // overlay is over the sidebar, so the header only keeps normal content padding.
-  const headerInsetSpacerWidth = isSidebarOpen ? '0.75rem' : 'var(--oc-titlebar-left-inset, 0.75rem)';
-  const headerControlsSpacerWidth = isSidebarOpen
-    ? '0px'
-    : 'calc(var(--oc-titlebar-controls-width, 5.5rem) + 0.5rem)';
+    return 'pl-3';
+  }, [isDesktopApp, isDesktopWindowFullscreen, isMacPlatform, isTabletStandalonePwa]);
 
   useEffect(() => {
     if (!isDesktopApp || !isMacPlatform) {
@@ -1675,13 +1645,14 @@ export const Header: React.FC<HeaderProps> = ({
     }
 
     return {
-      // Left inset is handled by the no-drag spacer (see renderDesktop); only
-      // the right inset / titlebar height are owned by the window-controls overlay.
+      paddingLeft: isTabletStandalonePwa
+        ? 'max(calc(0.75rem + var(--oc-wco-left-inset, 0px)), 5.5rem)'
+        : 'calc(0.75rem + var(--oc-wco-left-inset, 0px))',
       paddingRight: 'calc(0.75rem + var(--oc-wco-right-inset, 0px))',
       minHeight: 'max(3rem, var(--oc-wco-titlebar-height, 0px))',
       height: 'max(3rem, var(--oc-wco-titlebar-height, 0px))',
     };
-  }, [isDesktopApp, isVSCode, isWindowsElectronDesktop]);
+  }, [isDesktopApp, isTabletStandalonePwa, isVSCode, isWindowsElectronDesktop]);
 
   const updateHeaderHeight = React.useCallback(() => {
     if (typeof document === 'undefined') {
@@ -1764,7 +1735,6 @@ export const Header: React.FC<HeaderProps> = ({
         { id: 'files', label: t('layout.mainTab.files'), icon: "folder-6" },
         { id: 'terminal', label: t('layout.mainTab.terminal'), icon: "terminal-box" },
         { id: 'context', label: t('layout.mainTab.context'), icon: "file-list-2" },
-        { id: 'diagram', label: t('layout.mainTab.diagram'), icon: 'file' },
       );
 
       return base;
@@ -1785,13 +1755,13 @@ export const Header: React.FC<HeaderProps> = ({
   }, [activeMainTab, isMobile, setActiveMainTab]);
 
   const servicesTabs = React.useMemo(() => {
-    const base: Array<{ value: 'instance' | 'usage' | 'mcp'; label: string; icon: React.ReactNode }> = [];
+    const base: Array<{ value: 'instance' | 'usage' | 'mcp'; label: string; icon: IconName }> = [];
     if (isDesktopApp) {
-      base.push({ value: 'instance', label: t('layout.services.instance'), icon: <Icon name="server" className="h-3.5 w-3.5" /> });
+      base.push({ value: 'instance', label: t('layout.services.instance'), icon: "server" });
     }
     base.push(
-      { value: 'usage', label: t('layout.services.usage'), icon: <Icon name="timer" className="h-3.5 w-3.5" /> },
-      { value: 'mcp', label: 'MCP', icon: <McpIcon className="h-3.5 w-3.5" /> }
+      { value: 'usage', label: t('layout.services.usage'), icon: "timer" },
+      { value: 'mcp', label: 'MCP', icon: "plug-2" }
     );
     return base;
   }, [isDesktopApp, t]);
@@ -1800,7 +1770,7 @@ export const Header: React.FC<HeaderProps> = ({
     return servicesTabs.map((tab) => ({
       id: tab.value,
       label: tab.label,
-      icon: tab.icon,
+      icon: <Icon name={tab.icon} className="h-3.5 w-3.5" />,
     }));
   }, [servicesTabs]);
 
@@ -1875,7 +1845,7 @@ export const Header: React.FC<HeaderProps> = ({
   const mobileServicesTabItems = React.useMemo<SortableTabsStripItem[]>(() => {
     return [
       { id: 'usage', label: t('layout.services.usage'), icon: <Icon name="timer" className="h-3.5 w-3.5" /> },
-      { id: 'mcp', label: 'MCP', icon: <McpIcon className="h-3.5 w-3.5" /> },
+      { id: 'mcp', label: 'MCP', icon: <Icon name="command" className="h-3.5 w-3.5" /> },
     ];
   }, [t]);
 
@@ -2123,6 +2093,7 @@ export const Header: React.FC<HeaderProps> = ({
       onMouseDown={handleDragStart}
       className={cn(
         'app-region-drag relative flex h-12 select-none items-center pr-3',
+        desktopPaddingClass,
         macosHeaderSizeClass
       )}
       style={webWindowControlsOverlayStyle}
@@ -2148,37 +2119,53 @@ export const Header: React.FC<HeaderProps> = ({
           TitlebarLeftControls overlay; the header reserves matching left space
           via padding (see headerStyle) when the sidebar is collapsed. */}
       <div className="flex min-w-0 flex-1 items-center">
-        <SessionSwitcherDropdown>
-          <button
-            type="button"
-            aria-label={t('sessions.switcher.openAria')}
-            className="app-region-no-drag mr-3 flex min-w-0 flex-col items-start rounded-md px-1 py-0.5 -my-0.5 text-left transition-colors hover:bg-interactive-hover/60 focus-visible:outline-none focus-visible:bg-interactive-hover/60"
-          >
-            <span className="truncate typography-ui-label text-[14px] font-normal leading-tight text-foreground max-w-full">
-              {isNewSessionDraftOpen ? t('sessions.switcher.draftTitle') : currentSessionTitle}
-            </span>
-            {(activeProjectLabel || currentBranchLabel || (!isNewSessionDraftOpen && worktreeBadgeKind)) ? (
-              <span className="flex min-w-0 max-w-full items-center gap-1.5 truncate typography-micro text-[10.5px] font-normal leading-tight text-muted-foreground/75">
-                {activeProjectLabel ? <span className="truncate">{activeProjectLabel}</span> : null}
-                {currentBranchLabel ? (
-                  <span className="inline-flex min-w-0 items-center gap-0.5">
-                    <Icon name="git-branch" className="h-3 w-3 flex-shrink-0 text-muted-foreground/70" />
-                    <span className="truncate">{currentBranchLabel}</span>
-                  </span>
-                ) : null}
-                {!isNewSessionDraftOpen && worktreeBadgeKind ? (
-                  <span className={cn(
-                    "inline-flex min-w-0 items-center gap-0.5",
-                    worktreeBadgeKind === 'attention' || worktreeBadgeKind === 'invalid' || worktreeBadgeKind === 'missing' ? 'text-status-warning' : 'text-muted-foreground/60'
-                  )}>
-                    <Icon name="alert" className="h-3 w-3 flex-shrink-0" />
-                    <span className="truncate">{worktreeBadge}</span>
-                  </span>
-                ) : null}
+        {!hideSessionControls && projectActionsContext ? (
+          <ProjectActionsButton
+            projectRef={projectActionsContext.projectRef}
+            directory={projectActionsContext.directory}
+            className="mr-2"
+          />
+        ) : null}
+        {!hideSessionControls ? (
+          <SessionSwitcherDropdown>
+            <button
+              type="button"
+              aria-label={t('sessions.switcher.openAria')}
+              className="app-region-no-drag mr-3 flex min-w-0 flex-col items-start rounded-md px-1 py-0.5 -my-0.5 text-left transition-colors hover:bg-interactive-hover/60 focus-visible:outline-none focus-visible:bg-interactive-hover/60"
+            >
+              <span className="truncate typography-ui-label text-[14px] font-normal leading-tight text-foreground max-w-full">
+                {isNewSessionDraftOpen ? t('sessions.switcher.draftTitle') : currentSessionTitle}
               </span>
-            ) : null}
-          </button>
-        </SessionSwitcherDropdown>
+              {(activeProjectLabel || currentBranchLabel || (!isNewSessionDraftOpen && (hasNonZeroSessionChanges || worktreeBadgeKind))) ? (
+                <span className="flex min-w-0 max-w-full items-center gap-1.5 truncate typography-micro text-[10.5px] font-normal leading-tight text-muted-foreground/75">
+                  {activeProjectLabel ? <span className="truncate">{activeProjectLabel}</span> : null}
+                  {currentBranchLabel ? (
+                    <span className="inline-flex min-w-0 items-center gap-0.5">
+                      <Icon name="git-branch" className="h-3 w-3 flex-shrink-0 text-muted-foreground/70" />
+                      <span className="truncate">{currentBranchLabel}</span>
+                    </span>
+                  ) : null}
+                  {!isNewSessionDraftOpen && hasNonZeroSessionChanges ? (
+                    <span className="inline-flex flex-shrink-0 items-center gap-0 text-[0.92em]">
+                      <span className="text-status-success/80">+{currentSessionChanges.additions}</span>
+                      <span className="text-muted-foreground/60">/</span>
+                      <span className="text-status-error/65">-{currentSessionChanges.deletions}</span>
+                    </span>
+                  ) : null}
+                  {!isNewSessionDraftOpen && worktreeBadgeKind ? (
+                    <span className={cn(
+                      "inline-flex min-w-0 items-center gap-0.5",
+                      worktreeBadgeKind === 'attention' || worktreeBadgeKind === 'invalid' || worktreeBadgeKind === 'missing' ? 'text-status-warning' : 'text-muted-foreground/60'
+                    )}>
+                      <Icon name="alert" className="h-3 w-3 flex-shrink-0" />
+                      <span className="truncate">{worktreeBadge}</span>
+                    </span>
+                  ) : null}
+                </span>
+              ) : null}
+            </button>
+          </SessionSwitcherDropdown>
+        ) : null}
 
         {tabs.length > 0 && (
           <div className="flex items-center gap-1 rounded-lg bg-[var(--surface-muted)]/50 p-1">
@@ -2226,7 +2213,7 @@ export const Header: React.FC<HeaderProps> = ({
     <div className="app-region-drag relative flex items-center gap-2 px-3 py-2 select-none">
       <div className="flex items-center gap-2 shrink-0">
         {/* Use drawer toggle when onToggleLeftDrawer is provided, otherwise use legacy session switcher */}
-        {onToggleLeftDrawer ? (
+        {hideSessionControls ? null : onToggleLeftDrawer ? (
           <button
             type="button"
             onClick={handleMobileLeftDrawerToggle}
@@ -2258,12 +2245,12 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
-        {!onToggleLeftDrawer && isSessionSwitcherOpen && (
+        {!hideSessionControls && !onToggleLeftDrawer && isSessionSwitcherOpen && (
           <span className="typography-ui-label font-semibold text-foreground">{t('header.sessions.title')}</span>
         )}
       </div>
 
-      {(!isSessionSwitcherOpen || Boolean(onToggleLeftDrawer)) && (
+      {(hideSessionControls || !isSessionSwitcherOpen || Boolean(onToggleLeftDrawer)) && (
         <>
           <div className="app-region-no-drag flex min-w-0 flex-1 items-center">
             <div className="flex min-w-0 flex-1 overflow-x-auto overflow-y-hidden scrollbar-hidden touch-pan-x overscroll-x-contain">
@@ -2644,11 +2631,8 @@ export const Header: React.FC<HeaderProps> = ({
   );
 
   const headerClassName = cn(
-    'header-safe-area relative z-10 bg-background',
-    // Mobile keeps a full-width divider. On desktop the divider lives on the chat
-    // content wrapper instead, so it doesn't run between the header and the right
-    // sidebar (they read as one continuous surface).
-    isMobile && 'border-b border-border/50'
+    'header-safe-area relative z-10',
+    isMobile ? 'border-b border-border/50 bg-background' : 'bg-sidebar'
   );
 
   return (
