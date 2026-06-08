@@ -28,16 +28,17 @@ export type OptimisticRemoveInput = {
   messageID: string
 }
 
+export type OptimisticConfirmInput = {
+  sessionID: string
+  optimisticMessageID: string
+  canonicalMessageID: string
+}
+
 export type MessagePage = {
   session: Message[]
   part: { id: string; part: Part[] }[]
   cursor?: string
   complete: boolean
-}
-
-const hasParts = (parts: Part[] | undefined, want: Part[]) => {
-  if (!parts) return want.length === 0
-  return want.every((part) => Binary.search(parts, part.id, (item) => item.id).found)
 }
 
 const mergeParts = (parts: Part[] | undefined, want: Part[]) => {
@@ -64,14 +65,13 @@ export function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) 
   for (const item of items) {
     const result = Binary.search(session, item.message.id, (message) => message.id)
     const found = result.found
-    if (!found) session.splice(result.index, 0, item.message)
-
-    const current = part.get(item.message.id)
-    if (found && hasParts(current, item.parts)) {
+    if (found) {
       confirmed.push(item.message.id)
       continue
     }
+    session.splice(result.index, 0, item.message)
 
+    const current = part.get(item.message.id)
     part.set(item.message.id, mergeParts(current, item.parts))
   }
 

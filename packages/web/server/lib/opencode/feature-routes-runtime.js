@@ -13,6 +13,7 @@ import { registerPluginRoutes } from './plugin-routes.js';
 import { getNpmInfo, clearCache as clearNpmCache } from './npm-registry.js';
 import { parseNpmSpec, parsePathSpec, isExactSemver } from './plugin-spec.js';
 import { registerOpenCodeRoutes } from './routes.js';
+import { registerRuntimeMessageOrderingRoutes } from './runtime-message-ordering.js';
 
 export const createFeatureRoutesRuntime = (dependencies) => {
   const {
@@ -85,6 +86,15 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getProviderSources,
       removeProviderConfig,
       refreshOpenCodeAfterConfigChange,
+      buildOpenCodeUrl,
+      getOpenCodeAuthHeaders,
+    });
+
+    registerRuntimeMessageOrderingRoutes(app, {
+      crypto,
+      fsPromises,
+      path,
+      openchamberDataDir,
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
     });

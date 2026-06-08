@@ -58,6 +58,7 @@ interface ProjectsStore {
   discoverProjectIcon: (id: string, options?: { force?: boolean }) => Promise<{ ok: boolean; skipped?: boolean; reason?: string; error?: string }>;
   reorderProjects: (fromIndex: number, toIndex: number) => void;
   resetForRuntimeSwitch: () => void;
+  setManagedRuntimeWorkspace: (path: string) => void;
   validateProjectPath: (path: string) => ProjectPathValidationResult;
   synchronizeFromSettings: (settings: DesktopSettings) => void;
   syncVSCodeWorkspaceFolders: (folders: VSCodeWorkspaceFolderConfig[], activePath?: string | null) => ProjectEntry | null;
@@ -647,6 +648,31 @@ export const useProjectsStore = create<ProjectsStore>()(
 
       set({ projects: nextProjects, activeProjectId: id });
       persistProjects(nextProjects, id);
+    },
+
+    setManagedRuntimeWorkspace: (path: string) => {
+      const normalizedPath = normalizeProjectPath(path);
+      if (!normalizedPath) {
+        return;
+      }
+      const id = createProjectIdFromPath(normalizedPath);
+      const now = Date.now();
+      const existing = get().projects.find((project) => project.id === id || project.path === normalizedPath);
+      const entry: ProjectEntry = existing
+        ? { ...existing, lastOpenedAt: now }
+        : {
+          id,
+          path: normalizedPath,
+          label: deriveProjectLabel(normalizedPath),
+          color: pickAutoColor(get().projects),
+          addedAt: now,
+          lastOpenedAt: now,
+        };
+      const nextProjects = existing
+        ? get().projects.map((project) => (project.id === existing.id ? entry : project))
+        : [entry, ...get().projects];
+      set({ projects: nextProjects, activeProjectId: entry.id });
+      persistProjects(nextProjects, entry.id);
     },
 
     renameProject: (id: string, label: string) => {
