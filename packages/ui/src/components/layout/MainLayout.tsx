@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { animate, motion, useMotionValue } from 'motion/react';
 import { Header } from './Header';
+import { ManagedRuntimeBanner } from './ManagedRuntimeBanner';
 import { BottomTerminalDock } from './BottomTerminalDock';
 import { Sidebar, SIDEBAR_CONTENT_WIDTH } from './Sidebar';
 import { RightSidebar, RIGHT_SIDEBAR_CONTENT_WIDTH } from './RightSidebar';
@@ -20,6 +21,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUpdateStore } from '@/stores/useUpdateStore';
 import { useDeviceInfo } from '@/lib/device';
+import { useManagedRuntime } from '@/hooks/useManagedRuntimeInfo';
 import { cn } from '@/lib/utils';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 
@@ -59,6 +61,8 @@ export const MainLayout: React.FC = () => {
     const setMultiRunLauncherOpen = useUIStore((state) => state.setMultiRunLauncherOpen);
     const multiRunLauncherPrefillPrompt = useUIStore((state) => state.multiRunLauncherPrefillPrompt);
     const { isMobile, isTablet } = useDeviceInfo();
+    const { features: managedFeatures, managed, mode } = useManagedRuntime();
+    const isManagedRuntime = managed && mode === 'runtime';
     const sidebarWidth = useUIStore((state) => state.sidebarWidth);
     const rightSidebarWidth = useUIStore((state) => state.rightSidebarWidth);
     const rightSidebarAutoClosedRef = React.useRef(false);
@@ -76,6 +80,14 @@ export const MainLayout: React.FC = () => {
     }, []);
     const mobileRightDrawerOpenRef = React.useRef(false);
     const initialDrawerWidthRef = React.useRef(typeof window === 'undefined' ? 0 : window.innerWidth);
+
+    useEffect(() => {
+        if (!isManagedRuntime) {
+            return;
+        }
+        setMobileSessionPanelOpen(false);
+        useUIStore.getState().setSessionSwitcherOpen(false);
+    }, [isManagedRuntime, setMobileSessionPanelOpen]);
 
     // Left drawer motion value
     const leftDrawerX = useMotionValue(-initialDrawerWidthRef.current);
@@ -172,7 +184,7 @@ export const MainLayout: React.FC = () => {
     }, [isMobile, setMobileSessionPanelOpen, setRightSidebarOpen]);
 
     useEffect(() => {
-        if (!isMobile || activeMainTab !== 'chat' || mobileLeftDrawerOpen || mobileRightSidebarOpen || isSettingsDialogOpen) {
+        if (!isMobile || isManagedRuntime || activeMainTab !== 'chat' || mobileLeftDrawerOpen || mobileRightSidebarOpen || isSettingsDialogOpen) {
             return;
         }
 
@@ -208,7 +220,7 @@ export const MainLayout: React.FC = () => {
                 window.clearTimeout(timeoutId);
             }
         };
-    }, [activeMainTab, isMobile, isSettingsDialogOpen, mobileLeftDrawerOpen, mobileRightSidebarOpen]);
+    }, [activeMainTab, isManagedRuntime, isMobile, isSettingsDialogOpen, mobileLeftDrawerOpen, mobileRightSidebarOpen]);
 
     // Ensure mobile drawers are closed when opening full-screen settings
     useEffect(() => {
@@ -226,6 +238,10 @@ export const MainLayout: React.FC = () => {
     // Trigger initial update check shortly after mount, then repeat using server-suggested cadence.
     const checkForUpdates = useUpdateStore((state) => state.checkForUpdates);
     React.useEffect(() => {
+        if (managedFeatures.selfUpdate === false) {
+            return;
+        }
+
         const initialDelayMs = 3000;
         const defaultIntervalMs = 60 * 60 * 1000;
         const minIntervalMs = 5 * 60 * 1000;
@@ -257,7 +273,7 @@ export const MainLayout: React.FC = () => {
                 window.clearTimeout(timer);
             }
         };
-    }, [checkForUpdates]);
+    }, [checkForUpdates, managedFeatures.selfUpdate]);
 
     React.useEffect(() => {
         const previous = useUIStore.getState().isMobile;
@@ -422,6 +438,7 @@ export const MainLayout: React.FC = () => {
         const rawWidth = rightSidebarWidth || RIGHT_SIDEBAR_CONTENT_WIDTH;
         return Math.min(DESKTOP_RIGHT_SIDEBAR_MAX_WIDTH, Math.max(DESKTOP_RIGHT_SIDEBAR_MIN_WIDTH, rawWidth));
     }, [rightSidebarWidth]);
+    const effectiveSidebarOpen = isSidebarOpen && !isManagedRuntime;
 
     return (
         <DiffWorkerProvider>
@@ -443,6 +460,9 @@ export const MainLayout: React.FC = () => {
                     leftDrawerOpen: mobileLeftDrawerOpen,
                     rightDrawerOpen: mobileRightSidebarOpen,
                     toggleLeftDrawer: () => {
+                        if (isManagedRuntime) {
+                            return;
+                        }
                         const nextOpen = !mobileLeftDrawerOpen;
                         if (mobileRightSidebarOpen) {
                             setMobileRightSidebarOpen(false);
@@ -458,8 +478,12 @@ export const MainLayout: React.FC = () => {
                     setRightSidebarOpen: setMobileRightSidebarOpen,
                 }}>
                     {/* Mobile: header + drawer mode */}
+                    <ManagedRuntimeBanner />
                     {!isSettingsDialogOpen && <Header 
                         onToggleLeftDrawer={() => {
+                            if (isManagedRuntime) {
+                                return;
+                            }
                             const nextOpen = !mobileLeftDrawerOpen;
                             if (mobileRightSidebarOpen) {
                                 setMobileRightSidebarOpen(false);
@@ -471,6 +495,7 @@ export const MainLayout: React.FC = () => {
                         }}
                         leftDrawerOpen={mobileLeftDrawerOpen}
                         rightDrawerOpen={mobileRightSidebarOpen}
+                        hideSessionControls={isManagedRuntime}
                     />}
                     
                     {/* Main content area (fixed) */}
@@ -536,14 +561,15 @@ export const MainLayout: React.FC = () => {
                 <>
                     {/* Desktop: full-width Header above [Sidebar | chat-frame | RightSidebar] row */}
                     <div className="flex flex-1 flex-col overflow-hidden">
-                        <Header />
+                        <ManagedRuntimeBanner />
+                        <Header hideSessionControls={isManagedRuntime} />
                         <div className="relative flex flex-1 min-h-0 overflow-hidden bg-sidebar" data-page-scroll-lock="true">
                             <div
                                 aria-hidden
                                 className="pointer-events-none absolute top-0 z-0 bg-sidebar transition-[left,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
                                 style={{
-                                    left: `${isSidebarOpen ? visibleSidebarWidth : 0}px`,
-                                    opacity: isSidebarOpen ? 1 : 0,
+                                    left: `${effectiveSidebarOpen ? visibleSidebarWidth : 0}px`,
+                                    opacity: effectiveSidebarOpen ? 1 : 0,
                                     width: '10px',
                                     height: '10px',
                                     WebkitMaskImage: 'radial-gradient(circle at 100% 100%, transparent calc(10px - 1px), black 10px)',
@@ -554,8 +580,8 @@ export const MainLayout: React.FC = () => {
                                 aria-hidden
                                 className="pointer-events-none absolute bottom-0 z-0 bg-sidebar transition-[left,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
                                 style={{
-                                    left: `${isSidebarOpen ? visibleSidebarWidth : 0}px`,
-                                    opacity: isSidebarOpen ? 1 : 0,
+                                    left: `${effectiveSidebarOpen ? visibleSidebarWidth : 0}px`,
+                                    opacity: effectiveSidebarOpen ? 1 : 0,
                                     width: '10px',
                                     height: '10px',
                                     WebkitMaskImage: 'radial-gradient(circle at 100% 0%, transparent calc(10px - 1px), black 10px)',
@@ -587,7 +613,7 @@ export const MainLayout: React.FC = () => {
                                 }}
                             />
                             <Sidebar
-                                isOpen={isSidebarOpen}
+                                isOpen={effectiveSidebarOpen}
                                 isMobile={isMobile}
                                 className="border-0"
                             >
@@ -597,7 +623,7 @@ export const MainLayout: React.FC = () => {
                                 'relative flex flex-1 min-w-0 flex-col overflow-hidden',
                                 'bg-background',
                                 'border border-border/50 rounded-[10px]',
-                                !isSidebarOpen && 'border-l-transparent',
+                                !effectiveSidebarOpen && 'border-l-transparent',
                                 !isRightSidebarOpen && 'border-r-transparent'
                             )} data-page-scroll-lock="true">
                                 <div className="flex flex-1 min-h-0 overflow-hidden" data-page-scroll-lock="true">

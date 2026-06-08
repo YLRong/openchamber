@@ -25,6 +25,7 @@ import { useDeviceInfo } from '@/lib/device';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
+import { useManagedRuntime } from '@/hooks/useManagedRuntimeInfo';
 import { getContextFileOpenFailureMessage, validateContextFileOpen } from '@/lib/contextFileOpenGuard';
 import { toast } from '@/components/ui';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
@@ -91,6 +92,8 @@ export const CommandPalette: React.FC = () => {
   const { files: filesApi, git: gitApi } = useRuntimeAPIs();
   const ensureGitStatus = useGitStore((s) => s.ensureStatus);
   const { isMobile } = useDeviceInfo();
+  const { managed, mode } = useManagedRuntime();
+  const isManagedRuntime = managed && mode === 'runtime';
 
   const currentRoot = React.useMemo(
     () => (effectiveDirectory ? normalizePath(effectiveDirectory) : null),
@@ -264,8 +267,8 @@ export const CommandPalette: React.FC = () => {
   // ---------------------------------------------------------------------------
   const settingsRuntimeCtx = React.useMemo<SettingsRuntimeContext>(() => {
     const isDesktop = isDesktopShell();
-    return { isVSCode: isVSCodeRuntime(), isWeb: !isDesktop && isWebRuntime(), isDesktop };
-  }, []);
+    return { isVSCode: isVSCodeRuntime(), isWeb: !isDesktop && isWebRuntime(), isDesktop, isManagedRuntime };
+  }, [isManagedRuntime]);
 
   const settingsEntries = React.useMemo<CommandEntry[]>(() => {
     return SETTINGS_PAGE_METADATA

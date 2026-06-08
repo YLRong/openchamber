@@ -15,6 +15,9 @@ import { usePushVisibilityBeacon } from '@/hooks/usePushVisibilityBeacon';
 import { useWebNotificationStream } from '@/hooks/useWebNotificationStream';
 import { usePwaInstallPrompt } from '@/hooks/usePwaInstallPrompt';
 import { useWindowTitle } from '@/hooks/useWindowTitle';
+import { useManagedMode } from '@/hooks/useManagedMode';
+import { useManagedRuntime } from '@/hooks/useManagedRuntimeInfo';
+import { useManagedRuntimeBootstrap } from '@/hooks/useManagedRuntimeBootstrap';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { hasModifier } from '@/lib/utils';
 import { isDesktopLocalOriginActive, isDesktopShell, restartDesktopApp } from '@/lib/desktop';
@@ -114,6 +117,15 @@ const normalizeEmbeddedDirectory = (value: string | null | undefined): string =>
   return value.replace(/\\/g, '/').replace(/\/+$/g, '');
 };
 
+const DEFAULT_MANAGED_WORKSPACE_DIR = '/workspace';
+
+const normalizeManagedWorkspaceDir = (value: string | null | undefined): string => {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  const candidate = trimmed || DEFAULT_MANAGED_WORKSPACE_DIR;
+  const normalized = candidate.replace(/\\/g, '/');
+  return normalized.length > 1 ? normalized.replace(/\/+$/, '') : normalized;
+};
+
 const readEmbeddedSessionChatConfig = (): EmbeddedSessionChatConfig | null => {
   if (typeof window === 'undefined') {
     return null;
@@ -209,6 +221,8 @@ function App({ apis }: AppProps) {
     }
   }, []);
 
+  const { mode: managedMode, isLoading: isManagedModeLoading } = useManagedMode();
+  const managedRuntime = useManagedRuntime();
   const initializeApp = useConfigStore((s) => s.initializeApp);
   const isInitialized = useConfigStore((s) => s.isInitialized);
   const isConnected = useConfigStore((s) => s.isConnected);
@@ -246,6 +260,12 @@ function App({ apis }: AppProps) {
   const embeddedSessionChat = React.useMemo<EmbeddedSessionChatConfig | null>(() => readEmbeddedSessionChatConfig(), []);
   const embeddedBackgroundWorkEnabled = !embeddedSessionChat || isEmbeddedVisible;
   const isMcpOAuthCallback = React.useMemo(() => isMcpOAuthCallbackPath(), []);
+  const managedRuntimeDirectory = managedMode === 'runtime'
+    ? normalizeManagedWorkspaceDir(managedRuntime.workspaceDir)
+    : null;
+  const effectiveCurrentDirectory = managedRuntimeDirectory || currentDirectory || '';
+  const managedRuntimeDirectoryReady = !managedRuntimeDirectory
+    || normalizeEmbeddedDirectory(currentDirectory) === managedRuntimeDirectory;
 
   React.useEffect(() => {
     setStreamPerfEnabled(showMemoryDebug);
@@ -505,10 +525,10 @@ function App({ apis }: AppProps) {
     if (!isConnected) {
       return;
     }
-    opencodeClient.setDirectory(currentDirectory);
+    opencodeClient.setDirectory(effectiveCurrentDirectory);
 
     // Session loading is handled by the sync system's bootstrap — no manual loadSessions needed.
-  }, [currentDirectory, isSwitchingDirectory, isConnected, isVSCodeRuntime]);
+  }, [effectiveCurrentDirectory, isSwitchingDirectory, isConnected, isVSCodeRuntime]);
 
   React.useEffect(() => {
     if (!embeddedSessionChat || typeof window === 'undefined') {
@@ -587,6 +607,9 @@ function App({ apis }: AppProps) {
     if (typeof window === 'undefined') return;
 
     const handler = (event: Event) => {
+      if (managedMode === 'runtime') {
+        return;
+      }
       const detail = (event as CustomEvent<{ sessionId?: string; directory?: string }>).detail;
       const sessionId = typeof detail?.sessionId === 'string' ? detail.sessionId.trim() : '';
       if (!sessionId) return;
@@ -599,12 +622,15 @@ function App({ apis }: AppProps) {
 
     window.addEventListener('openchamber:open-session', handler as EventListener);
     return () => window.removeEventListener('openchamber:open-session', handler as EventListener);
-  }, []);
+  }, [managedMode]);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const handler = (event: Event) => {
+      if (managedMode === 'runtime') {
+        return;
+      }
       const detail = (event as CustomEvent<{ directory?: string; projectId?: string }>).detail;
       const directory = typeof detail?.directory === 'string' && detail.directory.trim().length > 0
         ? detail.directory.trim()
@@ -623,12 +649,15 @@ function App({ apis }: AppProps) {
 
     window.addEventListener('openchamber:open-draft-session', handler as EventListener);
     return () => window.removeEventListener('openchamber:open-draft-session', handler as EventListener);
-  }, []);
+  }, [managedMode]);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const handler = (event: Event) => {
+      if (managedMode === 'runtime') {
+        return;
+      }
       const detail = (event as CustomEvent<{ projectPath?: string }>).detail;
       const projectPath = typeof detail?.projectPath === 'string' ? detail.projectPath.trim() : '';
       if (!projectPath) return;
@@ -643,7 +672,7 @@ function App({ apis }: AppProps) {
 
     window.addEventListener('openchamber:open-project', handler as EventListener);
     return () => window.removeEventListener('openchamber:open-project', handler as EventListener);
-  }, []);
+  }, [managedMode]);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -665,6 +694,9 @@ function App({ apis }: AppProps) {
   useWindowTitle();
 
   useRouter();
+  useManagedRuntimeBootstrap({
+    enabled: isConnected && managedMode === 'runtime' && !isManagedModeLoading,
+  });
 
   const handleToggleMemoryDebug = React.useCallback(() => {
     setShowMemoryDebug(prev => !prev);
@@ -872,6 +904,28 @@ function App({ apis }: AppProps) {
     );
   }
 
+  if (isManagedModeLoading) {
+    return (
+      <div className="flex h-full items-center justify-center bg-background text-foreground">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (managedMode === 'runtime' && managedRuntimeDirectory && !managedRuntimeDirectoryReady) {
+    return (
+      <div className="flex h-full items-center justify-center bg-background text-foreground">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (initRetryExhausted && !isInitialized && !isVSCodeRuntime && !embeddedSessionChat) {
     return (
       <ErrorBoundary>
@@ -890,7 +944,7 @@ function App({ apis }: AppProps) {
 
   return (
     <ErrorBoundary>
-      <SyncProvider key={runtimeEndpointEpoch} sdk={opencodeClient.getSdkClient()} directory={currentDirectory || ''}>
+      <SyncProvider key={runtimeEndpointEpoch} sdk={opencodeClient.getSdkClient()} directory={effectiveCurrentDirectory}>
         <RuntimeAPIProvider apis={apis}>
           <FireworksProvider>
             <VoiceProvider>

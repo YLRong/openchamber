@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { useManagedRuntime } from '@/hooks/useManagedRuntimeInfo';
 
 const GITHUB_URL = 'https://github.com/btriapitsyn/openchamber';
 
@@ -33,8 +34,10 @@ export const AboutSettings: React.FC = () => {
     restartToUpdate: s.restartToUpdate,
   })));
   const { isMobile } = useDeviceInfo();
+  const { features: managedFeatures } = useManagedRuntime();
 
   const currentVersion = updateStore.info?.currentVersion || 'unknown';
+  const selfUpdateEnabled = managedFeatures.selfUpdate !== false;
 
   React.useEffect(() => {
     let cancelled = false;
@@ -96,7 +99,7 @@ export const AboutSettings: React.FC = () => {
             v{currentVersion}
           </span>
 
-          {!updateStore.available && !updateStore.error && (
+          {selfUpdateEnabled && !updateStore.available && !updateStore.error && (
             <button
               onClick={() => updateStore.checkForUpdates()}
               disabled={isChecking}
@@ -109,7 +112,7 @@ export const AboutSettings: React.FC = () => {
             </button>
           )}
 
-          {!isChecking && updateStore.available && (
+          {selfUpdateEnabled && !isChecking && updateStore.available && (
             <button
               onClick={() => setUpdateDialogOpen(true)}
               className="flex items-center gap-1 typography-meta text-[var(--primary-base)] hover:underline"
@@ -125,7 +128,7 @@ export const AboutSettings: React.FC = () => {
           <span className="typography-meta text-muted-foreground font-mono">{openCodeVersion || t('settings.openchamber.about.state.unknown')}</span>
         </div>
 
-        {updateStore.error && (
+        {selfUpdateEnabled && updateStore.error && (
           <p className="typography-micro text-[var(--status-error)] truncate">{updateStore.error}</p>
         )}
 
@@ -199,14 +202,14 @@ export const AboutSettings: React.FC = () => {
           </div>
           
           <div className="flex items-center gap-3">
-            {updateStore.checking && (
+            {selfUpdateEnabled && updateStore.checking && (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Icon name="loader" className="h-4 w-4 animate-spin" />
                 <span className="typography-meta">{t('settings.openchamber.about.state.checking')}</span>
               </div>
             )}
 
-            {!updateStore.checking && updateStore.available && (
+            {selfUpdateEnabled && !updateStore.checking && updateStore.available && (
               <Button size="sm"
                 variant="default"
                 onClick={() => setUpdateDialogOpen(true)}
@@ -216,21 +219,23 @@ export const AboutSettings: React.FC = () => {
               </Button>
             )}
 
-            {!updateStore.checking && !updateStore.available && !updateStore.error && (
+            {selfUpdateEnabled && !updateStore.checking && !updateStore.available && !updateStore.error && (
               <span className="typography-meta text-muted-foreground">{t('settings.openchamber.about.state.upToDate')}</span>
             )}
 
-            <Button size="sm"
-              variant="outline"
-              onClick={() => updateStore.checkForUpdates()}
-              disabled={updateStore.checking}
-            >
-              {t('settings.openchamber.about.actions.checkForUpdates')}
-            </Button>
+            {selfUpdateEnabled && (
+              <Button size="sm"
+                variant="outline"
+                onClick={() => updateStore.checkForUpdates()}
+                disabled={updateStore.checking}
+              >
+                {t('settings.openchamber.about.actions.checkForUpdates')}
+              </Button>
+            )}
           </div>
         </div>
         
-        {updateStore.error && (
+        {selfUpdateEnabled && updateStore.error && (
           <div className="px-3 py-2 border-b border-[var(--surface-subtle)]">
             <p className="typography-meta text-[var(--status-error)]">{updateStore.error}</p>
           </div>

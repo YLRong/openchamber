@@ -28,9 +28,16 @@ let _childStores: ChildStoreManager | null = null
 let _getDirectory: () => string = () => ""
 type OptimisticAddInput = { sessionID: string; directory?: string | null; message: Message; parts: Part[] }
 type OptimisticRemoveInput = { sessionID: string; directory?: string | null; messageID: string }
+type OptimisticConfirmInput = {
+  sessionID: string
+  directory?: string | null
+  optimisticMessageID: string
+  canonicalMessageID: string
+}
 
 let _optimisticAdd: ((input: OptimisticAddInput) => void) | null = null
 let _optimisticRemove: ((input: OptimisticRemoveInput) => void) | null = null
+let _optimisticConfirm: ((input: OptimisticConfirmInput) => void) | null = null
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -89,9 +96,11 @@ export function setActionRefs(
 export function setOptimisticRefs(
   add: (input: OptimisticAddInput) => void,
   remove: (input: OptimisticRemoveInput) => void,
+  confirm?: (input: OptimisticConfirmInput) => void,
 ) {
   _optimisticAdd = add
   _optimisticRemove = remove
+  _optimisticConfirm = confirm ?? null
 }
 
 function sdk() {
@@ -496,45 +505,39 @@ export async function unshareSession(sessionId: string): Promise<Session | null>
 // Optimistic message send — insert user message before API call, rollback on error
 // ---------------------------------------------------------------------------
 
-// ID generator matching OpenCode's Identifier.ascending format.
-// Uses BigInt(timestamp) * 0x1000 + counter, encoded as 6 hex bytes + random base62.
-// This ensures client-generated IDs sort correctly with server-generated ones.
-let lastIdTimestamp = 0
-let idCounter = 0
-
-function ascendingId(prefix: string): string {
-  const now = Date.now()
-  if (now !== lastIdTimestamp) {
-    lastIdTimestamp = now
-    idCounter = 0
-  }
-  idCounter += 1
-
-  const value = BigInt(now) * BigInt(0x1000) + BigInt(idCounter)
-  const bytes = new Uint8Array(6)
-  for (let i = 0; i < 6; i++) {
-    bytes[i] = Number((value >> BigInt(40 - 8 * i)) & BigInt(0xff))
-  }
-
-  let hex = ""
-  for (let i = 0; i < bytes.length; i++) {
-    hex += bytes[i].toString(16).padStart(2, "0")
-  }
-
+function randomBase62(length: number): string {
   const chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-  let rand = ""
-  for (let i = 0; i < 14; i++) {
-    rand += chars[Math.floor(Math.random() * 62)]
+  const bytes = new Uint8Array(length)
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    crypto.getRandomValues(bytes)
+  } else {
+    for (let i = 0; i < length; i++) {
+      bytes[i] = Math.floor(Math.random() * 256)
+    }
   }
 
-  return `${prefix}_${hex}${rand}`
+  let result = ""
+  for (let i = 0; i < length; i++) {
+    result += chars[bytes[i] % chars.length]
+  }
+  return result
+}
+
+function localOptimisticId(prefix: string): string {
+  return `${prefix}_${randomBase62(24)}`
+}
+
+function createClientRequestId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID()
+  }
+  return `req_${randomBase62(32)}`
 }
 
 /**
- * Wraps an async send operation with optimistic user-message insertion.
- * Uses useSync()'s optimistic infrastructure — message + parts are inserted
- * into the store AND registered in the shadow Map. mergeOptimisticPage
- * handles deduplication when the server echoes back the real message.
+ * 封装带 optimistic 用户消息插入的异步发送操作。
+ * 通过 useSync() 的 optimistic 基础设施把 message 和 parts 写入 store，
+ * 并注册到 shadow Map。服务端回传真实消息后由 mergeOptimisticPage 去重。
  */
 export async function optimisticSend(input: {
   sessionId: string
@@ -544,8 +547,8 @@ export async function optimisticSend(input: {
   agent?: string
   directory?: string | null
   files?: Array<{ type: "file"; mime: string; url: string; filename: string }>
-  /** The actual API call — receives the optimistic messageID so the server can use the same ID */
-  send: (messageID: string) => Promise<void>
+  /** 实际 API 调用，接收本地 optimistic identity 和重试幂等键。 */
+  send: (input: { optimisticMessageID: string; clientRequestId: string }) => Promise<string | void>
 }): Promise<void> {
   if (!_optimisticAdd || !_optimisticRemove) {
     throw new Error("Optimistic refs not set — is useSync() mounted?")
@@ -555,15 +558,16 @@ export async function optimisticSend(input: {
 
   const targetDirectory = input.directory ?? dir()
   const store = targetDirectory ? dirStoreForDirectory(targetDirectory) : dirStore()
-  const messageID = ascendingId("msg")
-  const textPartId = ascendingId("prt")
+  const messageID = localOptimisticId("optimistic_msg")
+  const textPartId = localOptimisticId("optimistic_prt")
+  const clientRequestId = createClientRequestId()
 
   const optimisticParts: Part[] = [
-    { id: textPartId, type: "text", text: input.content } as Part,
+    { id: textPartId, messageID, type: "text", text: input.content } as Part,
   ]
   if (input.files) {
     for (const f of input.files) {
-      optimisticParts.push({ id: ascendingId("prt"), type: "file", mime: f.mime, url: f.url, filename: f.filename } as Part)
+      optimisticParts.push({ id: localOptimisticId("optimistic_prt"), messageID, type: "file", mime: f.mime, url: f.url, filename: f.filename } as Part)
     }
   }
 
@@ -577,11 +581,11 @@ export async function optimisticSend(input: {
     system: "",
     agent: input.agent ?? "",
     model: `${input.providerID}/${input.modelID}`,
-    metadata: {} as Record<string, unknown>,
+    metadata: { openchamberClientRequestId: clientRequestId } as Record<string, unknown>,
     time: { created: Date.now(), completed: 0 },
   } as unknown as Message
 
-  // Insert into store + register in shadow Map (for mergeOptimisticPage cleanup)
+  // 写入 store 并注册到 shadow Map，供 mergeOptimisticPage 清理。
   _optimisticAdd({
     sessionID: input.sessionId,
     directory: targetDirectory,
@@ -589,7 +593,7 @@ export async function optimisticSend(input: {
     parts: optimisticParts,
   })
 
-  // Set busy status
+  // 设置 busy 状态。
   const current = store.getState()
   store.setState({
     session_status: {
@@ -599,9 +603,17 @@ export async function optimisticSend(input: {
   })
 
   try {
-    await input.send(messageID)
+    const canonicalMessageID = await input.send({ optimisticMessageID: messageID, clientRequestId })
+    if (canonicalMessageID && canonicalMessageID !== messageID && _optimisticConfirm) {
+      _optimisticConfirm({
+        sessionID: input.sessionId,
+        directory: targetDirectory,
+        optimisticMessageID: messageID,
+        canonicalMessageID,
+      })
+    }
   } catch (error) {
-    // Rollback via optimistic infrastructure
+    // 通过 optimistic 基础设施回滚。
     _optimisticRemove({
       sessionID: input.sessionId,
       directory: targetDirectory,

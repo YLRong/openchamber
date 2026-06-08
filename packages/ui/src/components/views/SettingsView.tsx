@@ -37,6 +37,7 @@ import type { OpenChamberSection } from '@/components/sections/openchamber/types
 import { OpenChamberPage } from '@/components/sections/openchamber/OpenChamberPage';
 import { useDeviceInfo } from '@/lib/device';
 import { isDesktopShell, isVSCodeRuntime, isWebRuntime } from '@/lib/desktop';
+import { useManagedRuntime } from '@/hooks/useManagedRuntimeInfo';
 import { useI18n } from '@/lib/i18n';
 import { Icon } from "@/components/icon/Icon";
 import type { IconName } from "@/components/icon/icons";
@@ -102,10 +103,10 @@ const pageOrder: SettingsPageSlug[] = [
 
 const SNIPPETS_SETTINGS_ICON = { icon: 'chat-thread' } as const;
 
-function buildRuntimeContext(isDesktop: boolean): SettingsRuntimeContext {
+function buildRuntimeContext(isDesktop: boolean, isManagedRuntime: boolean): SettingsRuntimeContext {
   const isVSCode = isVSCodeRuntime();
   const isWeb = !isDesktop && isWebRuntime();
-  return { isVSCode, isWeb, isDesktop };
+  return { isVSCode, isWeb, isDesktop, isManagedRuntime };
 }
 
 function isPageAvailable(page: SettingsPageMeta, ctx: SettingsRuntimeContext): boolean {
@@ -301,10 +302,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   const isDesktopApp = React.useMemo(() => {
     return isDesktopShell();
   }, []);
+  const { managed, mode } = useManagedRuntime();
+  const isManagedRuntime = managed && mode === 'runtime';
 
   // keep platform check available for future window chrome tweaks
 
-  const runtimeCtx = React.useMemo(() => buildRuntimeContext(isDesktopApp), [isDesktopApp]);
+  const runtimeCtx = React.useMemo(() => buildRuntimeContext(isDesktopApp, isManagedRuntime), [isDesktopApp, isManagedRuntime]);
 
   const visiblePages = React.useMemo(() => {
     const allowedPages = visiblePageSlugs ? new Set<SettingsPageSlug>(visiblePageSlugs) : null;

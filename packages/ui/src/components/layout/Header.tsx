@@ -695,6 +695,7 @@ interface HeaderProps {
   onToggleRightDrawer?: () => void;
   leftDrawerOpen?: boolean;
   rightDrawerOpen?: boolean;
+  hideSessionControls?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -702,6 +703,7 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleRightDrawer,
   leftDrawerOpen,
   rightDrawerOpen,
+  hideSessionControls = false,
 }) => {
   const { t } = useI18n();
   const setSessionSwitcherOpen = useUIStore((state) => state.setSessionSwitcherOpen);
@@ -1410,13 +1412,16 @@ export const Header: React.FC<HeaderProps> = ({
   }, []);
 
   const handleOpenSessionSwitcher = React.useCallback(() => {
+    if (hideSessionControls) {
+      return;
+    }
     if (isMobile) {
       blurActiveElement();
       setSessionSwitcherOpen(!isSessionSwitcherOpen);
       return;
     }
     toggleSidebar();
-  }, [blurActiveElement, isMobile, isSessionSwitcherOpen, setSessionSwitcherOpen, toggleSidebar]);
+  }, [blurActiveElement, hideSessionControls, isMobile, isSessionSwitcherOpen, setSessionSwitcherOpen, toggleSidebar]);
 
   const handleOpenWindowsAppMenu = React.useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -2073,13 +2078,15 @@ export const Header: React.FC<HeaderProps> = ({
           Icon={'menu-2'}
         />
       ) : null}
-      <HeaderIconActionButton
-        title={t('header.actions.openSessionsWithShortcut', { shortcut: shortcutLabel('toggle_sidebar') })}
-        ariaLabel={t('header.actions.openSessionsAria')}
-        onClick={handleOpenSessionSwitcher}
-        className={`${desktopHeaderIconButtonClass} shrink-0`}
-        Icon={'layout-left'}
-      />
+      {!hideSessionControls && (
+        <HeaderIconActionButton
+          title={t('header.actions.openSessionsWithShortcut', { shortcut: shortcutLabel('toggle_sidebar') })}
+          ariaLabel={t('header.actions.openSessionsAria')}
+          onClick={handleOpenSessionSwitcher}
+          className={`${desktopHeaderIconButtonClass} shrink-0`}
+          Icon={'layout-left'}
+        />
+      )}
 
       <div className="flex min-w-0 flex-1 items-center pl-3">
         {projectActionsContext && (
@@ -2089,44 +2096,46 @@ export const Header: React.FC<HeaderProps> = ({
             className="mr-2"
           />
         )}
-        <SessionSwitcherDropdown>
-          <button
-            type="button"
-            aria-label={t('sessions.switcher.openAria')}
-            className="app-region-no-drag mr-3 flex min-w-0 flex-col items-start rounded-md px-1 py-0.5 -my-0.5 text-left transition-colors hover:bg-interactive-hover/60 focus-visible:outline-none focus-visible:bg-interactive-hover/60"
-          >
-            <span className="truncate typography-ui-label text-[14px] font-normal leading-tight text-foreground max-w-full">
-              {isNewSessionDraftOpen ? t('sessions.switcher.draftTitle') : currentSessionTitle}
-            </span>
-            {(activeProjectLabel || currentBranchLabel || (!isNewSessionDraftOpen && (hasNonZeroSessionChanges || worktreeBadgeKind))) ? (
-              <span className="flex min-w-0 max-w-full items-center gap-1.5 truncate typography-micro text-[10.5px] font-normal leading-tight text-muted-foreground/75">
-                {activeProjectLabel ? <span className="truncate">{activeProjectLabel}</span> : null}
-                {currentBranchLabel ? (
-                  <span className="inline-flex min-w-0 items-center gap-0.5">
-                    <Icon name="git-branch" className="h-3 w-3 flex-shrink-0 text-muted-foreground/70" />
-                    <span className="truncate">{currentBranchLabel}</span>
-                  </span>
-                ) : null}
-                {!isNewSessionDraftOpen && hasNonZeroSessionChanges ? (
-                  <span className="inline-flex flex-shrink-0 items-center gap-0 text-[0.92em]">
-                    <span className="text-status-success/80">+{currentSessionChanges.additions}</span>
-                    <span className="text-muted-foreground/60">/</span>
-                    <span className="text-status-error/65">-{currentSessionChanges.deletions}</span>
-                  </span>
-                ) : null}
-                {!isNewSessionDraftOpen && worktreeBadgeKind ? (
-                  <span className={cn(
-                    "inline-flex min-w-0 items-center gap-0.5",
-                    worktreeBadgeKind === 'attention' || worktreeBadgeKind === 'invalid' || worktreeBadgeKind === 'missing' ? 'text-status-warning' : 'text-muted-foreground/60'
-                  )}>
-                    <Icon name="alert" className="h-3 w-3 flex-shrink-0" />
-                    <span className="truncate">{worktreeBadge}</span>
-                  </span>
-                ) : null}
+        {!hideSessionControls && (
+          <SessionSwitcherDropdown>
+            <button
+              type="button"
+              aria-label={t('sessions.switcher.openAria')}
+              className="app-region-no-drag mr-3 flex min-w-0 flex-col items-start rounded-md px-1 py-0.5 -my-0.5 text-left transition-colors hover:bg-interactive-hover/60 focus-visible:outline-none focus-visible:bg-interactive-hover/60"
+            >
+              <span className="truncate typography-ui-label text-[14px] font-normal leading-tight text-foreground max-w-full">
+                {isNewSessionDraftOpen ? t('sessions.switcher.draftTitle') : currentSessionTitle}
               </span>
-            ) : null}
-          </button>
-        </SessionSwitcherDropdown>
+              {(activeProjectLabel || currentBranchLabel || (!isNewSessionDraftOpen && (hasNonZeroSessionChanges || worktreeBadgeKind))) ? (
+                <span className="flex min-w-0 max-w-full items-center gap-1.5 truncate typography-micro text-[10.5px] font-normal leading-tight text-muted-foreground/75">
+                  {activeProjectLabel ? <span className="truncate">{activeProjectLabel}</span> : null}
+                  {currentBranchLabel ? (
+                    <span className="inline-flex min-w-0 items-center gap-0.5">
+                      <Icon name="git-branch" className="h-3 w-3 flex-shrink-0 text-muted-foreground/70" />
+                      <span className="truncate">{currentBranchLabel}</span>
+                    </span>
+                  ) : null}
+                  {!isNewSessionDraftOpen && hasNonZeroSessionChanges ? (
+                    <span className="inline-flex flex-shrink-0 items-center gap-0 text-[0.92em]">
+                      <span className="text-status-success/80">+{currentSessionChanges.additions}</span>
+                      <span className="text-muted-foreground/60">/</span>
+                      <span className="text-status-error/65">-{currentSessionChanges.deletions}</span>
+                    </span>
+                  ) : null}
+                  {!isNewSessionDraftOpen && worktreeBadgeKind ? (
+                    <span className={cn(
+                      "inline-flex min-w-0 items-center gap-0.5",
+                      worktreeBadgeKind === 'attention' || worktreeBadgeKind === 'invalid' || worktreeBadgeKind === 'missing' ? 'text-status-warning' : 'text-muted-foreground/60'
+                    )}>
+                      <Icon name="alert" className="h-3 w-3 flex-shrink-0" />
+                      <span className="truncate">{worktreeBadge}</span>
+                    </span>
+                  ) : null}
+                </span>
+              ) : null}
+            </button>
+          </SessionSwitcherDropdown>
+        )}
 
         {tabs.length > 0 && (
           <div className="flex items-center gap-1 rounded-lg bg-[var(--surface-muted)]/50 p-1">
@@ -2173,7 +2182,7 @@ export const Header: React.FC<HeaderProps> = ({
     <div className="app-region-drag relative flex items-center gap-2 px-3 py-2 select-none">
       <div className="flex items-center gap-2 shrink-0">
         {/* Use drawer toggle when onToggleLeftDrawer is provided, otherwise use legacy session switcher */}
-        {onToggleLeftDrawer ? (
+        {hideSessionControls ? null : onToggleLeftDrawer ? (
           <button
             type="button"
             onClick={handleMobileLeftDrawerToggle}
@@ -2205,12 +2214,12 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
-        {!onToggleLeftDrawer && isSessionSwitcherOpen && (
+        {!hideSessionControls && !onToggleLeftDrawer && isSessionSwitcherOpen && (
           <span className="typography-ui-label font-semibold text-foreground">{t('header.sessions.title')}</span>
         )}
       </div>
 
-      {(!isSessionSwitcherOpen || Boolean(onToggleLeftDrawer)) && (
+      {(hideSessionControls || !isSessionSwitcherOpen || Boolean(onToggleLeftDrawer)) && (
         <>
           <div className="app-region-no-drag flex min-w-0 flex-1 items-center">
             <div className="flex min-w-0 flex-1 overflow-x-auto overflow-y-hidden scrollbar-hidden touch-pan-x overscroll-x-contain">

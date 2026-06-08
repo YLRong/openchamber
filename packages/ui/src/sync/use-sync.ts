@@ -6,6 +6,7 @@ import { SESSION_CACHE_LIMIT, type State } from "./types"
 import { pickSessionCacheEvictions } from "./session-cache"
 import {
   mergeOptimisticPage,
+  type OptimisticConfirmInput,
   type OptimisticItem,
 } from "./optimistic"
 import { dropCachedSessionMessageRecordsSnapshots, useDirectoryStore, useSyncSDK, useSyncDirectory, useChildStoreManager } from "./sync-context"
@@ -544,6 +545,52 @@ export function useSync() {
     [clearOptimistic, getOptimisticStore],
   )
 
+  const optimisticConfirm = useCallback(
+    (input: OptimisticConfirmInput & { directory?: string | null }) => {
+      if (input.optimisticMessageID === input.canonicalMessageID) return
+
+      const key = `${input.directory || directory}\n${input.sessionID}`
+      const list = optimistic.current.get(key)
+      const item = list?.get(input.optimisticMessageID)
+      if (list && item) {
+        list.delete(input.optimisticMessageID)
+        const message = { ...item.message, id: input.canonicalMessageID }
+        const parts = sortParts(item.parts.map((part) => ({ ...part, messageID: input.canonicalMessageID } as Part)))
+        list.set(input.canonicalMessageID, { message, parts })
+      }
+
+      const targetStore = getOptimisticStore(input.directory)
+      const current = targetStore.getState()
+      const message = { ...current.message }
+      const part = { ...current.part }
+      const messages = message[input.sessionID] ? [...message[input.sessionID]] : []
+      const existingCanonical = Binary.search(messages, input.canonicalMessageID, (m) => m.id)
+      const existingOptimistic = Binary.search(messages, input.optimisticMessageID, (m) => m.id)
+      const sourceMessage = existingOptimistic.found ? messages[existingOptimistic.index] : item?.message
+
+      if (existingOptimistic.found) {
+        messages.splice(existingOptimistic.index, 1)
+      }
+      if (!existingCanonical.found && sourceMessage) {
+        const nextMessage = { ...sourceMessage, id: input.canonicalMessageID }
+        const insertResult = Binary.search(messages, input.canonicalMessageID, (m) => m.id)
+        messages.splice(insertResult.index, 0, nextMessage)
+      }
+      message[input.sessionID] = messages
+
+      const optimisticParts = part[input.optimisticMessageID] ?? item?.parts
+      if (optimisticParts && !part[input.canonicalMessageID]) {
+        part[input.canonicalMessageID] = sortParts(
+          optimisticParts.map((entry) => ({ ...entry, messageID: input.canonicalMessageID } as Part)),
+        )
+      }
+      delete part[input.optimisticMessageID]
+
+      targetStore.setState({ message, part })
+    },
+    [directory, getOptimisticStore],
+  )
+
   return useMemo(
     () => ({
       ensureSessionRenderable: syncSession,
@@ -554,8 +601,9 @@ export function useSync() {
       optimistic: {
         add: optimisticAdd,
         remove: optimisticRemove,
+        confirm: optimisticConfirm,
       },
     }),
-    [syncSession, loadMore, hasMore, isLoading, optimisticAdd, optimisticRemove],
+    [syncSession, loadMore, hasMore, isLoading, optimisticAdd, optimisticRemove, optimisticConfirm],
   )
 }
