@@ -4,27 +4,21 @@ import { useShallow } from 'zustand/react/shallow';
 import { UpdateDialog } from '@/components/ui/UpdateDialog';
 import { useDeviceInfo } from '@/lib/device';
 import { toast } from '@/components/ui';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Icon } from "@/components/icon/Icon";
-import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { useManagedRuntime } from '@/hooks/useManagedRuntimeInfo';
 
-const GITHUB_URL = 'https://github.com/openchamber/openchamber';
-const DISCORD_URL = 'https://discord.gg/ZYRSdnwwKA';
-const X_URL = 'https://x.com/openchamber_dev';
+const GITHUB_URL = 'https://github.com/btriapitsyn/openchamber';
 
 const MIN_CHECKING_DURATION = 800; // ms
 
-type AboutSettingsProps = {
-  initialUpdateDialogOpen?: boolean;
-};
-
-export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialogOpen = false }) => {
+export const AboutSettings: React.FC = () => {
   const { t } = useI18n();
-  const [updateDialogOpen, setUpdateDialogOpen] = React.useState(initialUpdateDialogOpen);
+  const [updateDialogOpen, setUpdateDialogOpen] = React.useState(false);
   const [showChecking, setShowChecking] = React.useState(false);
-  const [openChamberVersion, setOpenChamberVersion] = React.useState<string | null>(null);
   const [openCodeVersion, setOpenCodeVersion] = React.useState<string | null>(null);
   const updateStore = useUpdateStore(useShallow((s) => ({
     info: s.info,
@@ -40,49 +34,24 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
     restartToUpdate: s.restartToUpdate,
   })));
   const { isMobile } = useDeviceInfo();
+  const { features: managedFeatures } = useManagedRuntime();
 
-  const currentVersion = openChamberVersion || updateStore.info?.currentVersion || 'unknown';
-
-  React.useEffect(() => {
-    let cancelled = false;
-
-    const loadOpenChamberVersion = async () => {
-      try {
-        const response = await runtimeFetch('/api/system/info', {
-          method: 'GET',
-          headers: { Accept: 'application/json' },
-        });
-        if (!response.ok) return;
-        const data = await response.json().catch(() => null) as { openchamberVersion?: unknown } | null;
-        const version = typeof data?.openchamberVersion === 'string' && data.openchamberVersion.trim().length > 0
-          ? data.openchamberVersion.trim()
-          : null;
-        if (!cancelled) setOpenChamberVersion(version);
-      } catch {
-        if (!cancelled) setOpenChamberVersion(null);
-      }
-    };
-
-    void loadOpenChamberVersion();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const currentVersion = updateStore.info?.currentVersion || 'unknown';
+  const selfUpdateEnabled = managedFeatures.selfUpdate !== false;
 
   React.useEffect(() => {
     let cancelled = false;
 
     const loadOpenCodeVersion = async () => {
       try {
-        const response = await runtimeFetch('/api/opencode/upgrade-status', {
+        const response = await runtimeFetch('/api/opencode/version', {
           method: 'GET',
           headers: { Accept: 'application/json' },
         });
         if (!response.ok) return;
-        const data = await response.json().catch(() => null) as { currentVersion?: unknown } | null;
-        const version = typeof data?.currentVersion === 'string' && data.currentVersion.trim().length > 0
-          ? data.currentVersion.trim()
+        const data = await response.json().catch(() => null) as { version?: unknown } | null;
+        const version = typeof data?.version === 'string' && data.version.trim().length > 0
+          ? data.version.trim()
           : null;
         if (!cancelled) setOpenCodeVersion(version);
       } catch {
@@ -120,90 +89,81 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
 
   const isChecking = updateStore.checking || showChecking;
 
+  // Compact mobile layout for sidebar footer
   if (isMobile) {
     return (
-      <div className="w-full space-y-6 pb-2">
-        <div className="flex flex-col items-center text-center">
-          <OpenChamberLogo width={72} height={72} />
-          <h2 className="mt-4 typography-ui-header font-semibold text-foreground">OpenChamber</h2>
-          <div className="mt-2 space-y-1 typography-ui text-muted-foreground">
-            <p>{t('aboutDialog.openChamberVersionLabel', { version: currentVersion })}</p>
-            <p>{t('aboutDialog.openCodeVersionLabel', { version: openCodeVersion || t('settings.openchamber.about.state.unknown') })}</p>
-          </div>
-        </div>
+      <div className="w-full space-y-2">
+        {/* Version row with update status */}
+        <div className="flex items-center justify-between">
+          <span className="typography-meta text-muted-foreground">
+            v{currentVersion}
+          </span>
 
-        <div className="flex justify-center">
-          {!updateStore.available && !updateStore.error && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
+          {selfUpdateEnabled && !updateStore.available && !updateStore.error && (
+            <button
               onClick={() => updateStore.checkForUpdates()}
               disabled={isChecking}
-              className="h-10 w-auto justify-center gap-2 rounded-xl px-4"
+              className={cn(
+                'typography-meta text-muted-foreground/60 hover:text-muted-foreground disabled:cursor-default',
+                isChecking && 'animate-pulse [animation-duration:1s]'
+              )}
             >
-              {isChecking ? <Icon name="loader" className="size-4 animate-spin" /> : <Icon name="refresh" className="size-4" />}
-              {isChecking ? t('settings.openchamber.about.state.checking') : t('settings.openchamber.about.actions.checkForUpdates')}
-            </Button>
+              {t('settings.openchamber.about.actions.checkUpdates')}
+            </button>
           )}
 
-          {!isChecking && updateStore.available && (
-            <Button
-              type="button"
-              variant="default"
-              size="sm"
+          {selfUpdateEnabled && !isChecking && updateStore.available && (
+            <button
               onClick={() => setUpdateDialogOpen(true)}
-              className="h-10 w-auto justify-center gap-2 rounded-xl px-4"
+              className="flex items-center gap-1 typography-meta text-[var(--primary-base)] hover:underline"
             >
-              <Icon name="download" className="size-4" />
-              {t('settings.openchamber.about.actions.updateToVersion', { version: updateStore.info?.version || '' })}
-            </Button>
+              <Icon name="download" className="h-3.5 w-3.5" />
+              {t('settings.openchamber.about.actions.update')}
+            </button>
           )}
         </div>
 
-        {updateStore.error && (
-          <p className="rounded-xl border border-[var(--status-error-border)] bg-[var(--status-error-background)] px-3 py-2 typography-meta text-[var(--status-error)]">
-            {updateStore.error}
-          </p>
+        <div className="flex items-center justify-between">
+          <span className="typography-meta text-muted-foreground">{t('settings.openchamber.about.field.openCodeVersion')}</span>
+          <span className="typography-meta text-muted-foreground font-mono">{openCodeVersion || t('settings.openchamber.about.state.unknown')}</span>
+        </div>
+
+        {selfUpdateEnabled && updateStore.error && (
+          <p className="typography-micro text-[var(--status-error)] truncate">{updateStore.error}</p>
         )}
 
-        <div className="flex flex-col items-center gap-3 text-center">
-          <div className="flex items-center justify-center gap-5">
-            <a
-              href={GITHUB_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 typography-ui-label text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <Icon name="github-fill" className="size-5" />
-              <span>GitHub</span>
-            </a>
-
-            <a
-              href={DISCORD_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 typography-ui-label text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <Icon name="discord-fill" className="size-5" />
-              <span>Discord</span>
-            </a>
-          </div>
-
+        {/* Links row */}
+        <div className="flex items-center gap-3">
           <a
-            href={X_URL}
+            href={GITHUB_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 typography-ui-label text-muted-foreground transition-colors hover:text-foreground"
+            className="flex items-center gap-1 typography-meta text-muted-foreground hover:text-foreground transition-colors"
           >
-            <Icon name="twitter-xfill" className="size-5" />
-            <span>@openchamber_dev</span>
+            <Icon name="github-fill" className="h-3.5 w-3.5" />
+            <span>GitHub</span>
+          </a>
+
+          <a
+            href="https://discord.gg/ZYRSdnwwKA"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 typography-meta text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Icon name="discord-fill" className="h-3.5 w-3.5" />
+            <span>Discord</span>
+          </a>
+
+          <a
+            href="https://x.com/btriapitsyn"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 typography-meta text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Icon name="twitter-xfill" className="h-3.5 w-3.5" />
+            <span>@btriapitsyn</span>
           </a>
         </div>
-
-        <p className="text-center typography-ui text-muted-foreground/60">
-          {t('aboutDialog.footerNote')}
-        </p>
 
         <UpdateDialog
           open={updateDialogOpen}
@@ -242,14 +202,14 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
           </div>
           
           <div className="flex items-center gap-3">
-            {updateStore.checking && (
+            {selfUpdateEnabled && updateStore.checking && (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Icon name="loader" className="h-4 w-4 animate-spin" />
                 <span className="typography-meta">{t('settings.openchamber.about.state.checking')}</span>
               </div>
             )}
 
-            {!updateStore.checking && updateStore.available && (
+            {selfUpdateEnabled && !updateStore.checking && updateStore.available && (
               <Button size="sm"
                 variant="default"
                 onClick={() => setUpdateDialogOpen(true)}
@@ -259,21 +219,23 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
               </Button>
             )}
 
-            {!updateStore.checking && !updateStore.available && !updateStore.error && (
+            {selfUpdateEnabled && !updateStore.checking && !updateStore.available && !updateStore.error && (
               <span className="typography-meta text-muted-foreground">{t('settings.openchamber.about.state.upToDate')}</span>
             )}
 
-            <Button size="sm"
-              variant="outline"
-              onClick={() => updateStore.checkForUpdates()}
-              disabled={updateStore.checking}
-            >
-              {t('settings.openchamber.about.actions.checkForUpdates')}
-            </Button>
+            {selfUpdateEnabled && (
+              <Button size="sm"
+                variant="outline"
+                onClick={() => updateStore.checkForUpdates()}
+                disabled={updateStore.checking}
+              >
+                {t('settings.openchamber.about.actions.checkForUpdates')}
+              </Button>
+            )}
           </div>
         </div>
         
-        {updateStore.error && (
+        {selfUpdateEnabled && updateStore.error && (
           <div className="px-3 py-2 border-b border-[var(--surface-subtle)]">
             <p className="typography-meta text-[var(--status-error)]">{updateStore.error}</p>
           </div>
@@ -290,15 +252,15 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
             <span>GitHub</span>
           </a>
 
-            <a
-              href={X_URL}
+          <a
+            href="https://x.com/btriapitsyn"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground typography-meta transition-colors"
           >
             <Icon name="twitter-xfill" className="h-4 w-4" />
-              <span>@openchamber_dev</span>
-            </a>
+            <span>@btriapitsyn</span>
+          </a>
         </div>
       </div>
 

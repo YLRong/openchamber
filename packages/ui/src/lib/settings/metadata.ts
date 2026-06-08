@@ -22,8 +22,7 @@ export type SettingsPageSlug =
   | 'snippets'
   | 'notifications'
   | 'voice'
-  | 'tunnel'
-  | 'about';
+  | 'tunnel';
 
 export type SettingsPageGroup =
   | 'appearance'
@@ -39,6 +38,7 @@ export interface SettingsRuntimeContext {
   isVSCode: boolean;
   isWeb: boolean;
   isDesktop: boolean;
+  isManagedRuntime: boolean;
 }
 
 export interface SettingsPageMeta {
@@ -84,7 +84,7 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     group: 'projects',
     kind: 'single',
     keywords: ['ssh', 'remote', 'instances', 'tunnels', 'forwarding', 'connection'],
-    isAvailable: (ctx) => !ctx.isVSCode,
+    isAvailable: (ctx) => !ctx.isVSCode && !ctx.isManagedRuntime,
   },
   {
     slug: 'providers',
@@ -155,7 +155,7 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     group: 'git',
     kind: 'single',
     keywords: ['git', 'github', 'identity', 'identities', 'ssh', 'profiles', 'credentials', 'keys', 'commit', 'gitmoji', 'oauth', 'prs', 'issues'],
-    isAvailable: (ctx) => !ctx.isVSCode,
+    isAvailable: (ctx) => !ctx.isVSCode && !ctx.isManagedRuntime,
   },
   {
     slug: 'appearance',
@@ -177,7 +177,7 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     group: 'general',
     kind: 'single',
     keywords: ['keyboard', 'hotkeys', 'shortcuts', 'bindings'],
-    isAvailable: (ctx) => !ctx.isVSCode,
+    isAvailable: (ctx) => !ctx.isVSCode && !ctx.isManagedRuntime,
   },
   {
     slug: 'sessions',
@@ -192,7 +192,7 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     group: 'general',
     kind: 'split',
     keywords: ['prompts', 'templates', 'git', 'github', 'review', 'commit', 'pull request'],
-    isAvailable: (ctx) => !ctx.isVSCode,
+    isAvailable: (ctx) => !ctx.isVSCode && !ctx.isManagedRuntime,
   },
   {
     slug: 'snippets',
@@ -204,8 +204,7 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
 
   { slug: 'notifications', title: 'Notifications', group: 'general', kind: 'single', keywords: ['alerts', 'native', 'summary', 'summarization'], },
   { slug: 'voice', title: 'Voice', group: 'advanced', kind: 'single', keywords: ['tts', 'speech', 'voice'], isAvailable: (ctx) => !ctx.isVSCode },
-  { slug: 'tunnel', title: 'Remote Tunnel', group: 'advanced', kind: 'single', keywords: ['tunnel', 'cloudflare', 'qr', 'remote', 'mobile', 'share'], isAvailable: (ctx) => !ctx.isVSCode },
-  { slug: 'about', title: 'About', group: 'advanced', kind: 'single', keywords: ['about', 'version', 'updates', 'release', 'changelog'], },
+  { slug: 'tunnel', title: 'Remote Tunnel', group: 'advanced', kind: 'single', keywords: ['tunnel', 'cloudflare', 'qr', 'remote', 'mobile', 'share'], isAvailable: (ctx) => !ctx.isVSCode && !ctx.isManagedRuntime },
 ] as const;
 
 export const LEGACY_SIDEBAR_SECTION_TO_SETTINGS_SLUG: Record<SidebarSection, SettingsPageSlug> = {

@@ -112,7 +112,7 @@ export function routeMessage(params: {
         agent: params.agent,
         directory: requestDirectory,
         files: params.files,
-        send: (messageID) => opencodeClient.sendCommand({
+        send: ({ optimisticMessageID, clientRequestId }) => opencodeClient.sendCommand({
           id: params.sessionId,
           providerID: params.providerID,
           modelID: params.modelID,
@@ -121,9 +121,10 @@ export function routeMessage(params: {
           agent: params.agent,
           variant: params.variant,
           files: params.files,
-          messageId: messageID,
+          messageId: optimisticMessageID,
+          clientRequestId,
           directory: requestDirectory,
-        }).then(() => {}),
+        }),
       })
     }
   }
@@ -137,7 +138,7 @@ export function routeMessage(params: {
     agent: params.agent,
     directory: requestDirectory,
     files: params.files,
-    send: (messageID) => opencodeClient.sendMessage({
+    send: ({ optimisticMessageID, clientRequestId }) => opencodeClient.sendMessage({
       id: params.sessionId,
       providerID: params.providerID,
       modelID: params.modelID,
@@ -147,9 +148,10 @@ export function routeMessage(params: {
       variant: params.variant,
       files: params.files,
       additionalParts: params.additionalParts,
-      messageId: messageID,
+      messageId: optimisticMessageID,
+      clientRequestId,
       directory: requestDirectory,
-    }).then(() => {}),
+    }),
   })
 }
 

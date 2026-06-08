@@ -16,6 +16,7 @@ import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useDeviceInfo } from '@/lib/device';
 import { isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, isWebRuntime } from '@/lib/desktop';
 import { subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
+import { useManagedRuntime } from '@/hooks/useManagedRuntimeInfo';
 import type { OpenChamberSection } from './types';
 
 const useRuntimeEndpointEpoch = (): number => {
@@ -38,8 +39,10 @@ export const OpenChamberPage: React.FC<OpenChamberPageProps> = ({ section }) => 
     const runtimeEndpointEpoch = useRuntimeEndpointEpoch();
     const showAbout = isMobile && isWebRuntime();
     const isVSCode = isVSCodeRuntime();
+    const { managed, mode } = useManagedRuntime();
+    const isManagedRuntime = managed && mode === 'runtime';
     void runtimeEndpointEpoch;
-    const showDesktopNetworkSettings = isDesktopShell() && isDesktopLocalOriginActive();
+    const showDesktopNetworkSettings = !isManagedRuntime && isDesktopShell() && isDesktopLocalOriginActive();
 
     // If no section specified, show all (mobile/legacy behavior)
     if (!section) {
@@ -58,7 +61,7 @@ export const OpenChamberPage: React.FC<OpenChamberPageProps> = ({ section }) => 
                             <DesktopNetworkSettings />
                         </div>
                     )}
-                    {!isVSCode && (
+                    {!isVSCode && !isManagedRuntime && (
                         <div className="border-t border-border/40 pt-6">
                             <OpenCodeCliSettings />
                         </div>
@@ -118,6 +121,10 @@ export const OpenChamberPage: React.FC<OpenChamberPageProps> = ({ section }) => 
 };
 
 const ShortcutsSectionContent: React.FC = () => {
+    const { managed, mode } = useManagedRuntime();
+    if (managed && mode === 'runtime') {
+        return null;
+    }
     return <KeyboardShortcutsSettings />;
 };
 
@@ -150,8 +157,10 @@ const ChatSectionContent: React.FC = () => {
 const SessionsSectionContent: React.FC = () => {
     const isVSCode = isVSCodeRuntime();
     const runtimeEndpointEpoch = useRuntimeEndpointEpoch();
+    const { managed, mode } = useManagedRuntime();
+    const isManagedRuntime = managed && mode === 'runtime';
     void runtimeEndpointEpoch;
-    const showDesktopNetworkSettings = isDesktopShell() && isDesktopLocalOriginActive();
+    const showDesktopNetworkSettings = !isManagedRuntime && isDesktopShell() && isDesktopLocalOriginActive();
     return (
         <div className="space-y-6">
             <DefaultsSettings />
@@ -160,7 +169,7 @@ const SessionsSectionContent: React.FC = () => {
                     <DesktopNetworkSettings />
                 </div>
             )}
-            {!isVSCode && (
+            {!isVSCode && !isManagedRuntime && (
                 <div className="border-t border-border/40 pt-6">
                     <OpenCodeCliSettings />
                 </div>
@@ -177,6 +186,10 @@ const SessionsSectionContent: React.FC = () => {
 
 // Git section: Commit message model, Worktree settings
 const GitSectionContent: React.FC = () => {
+    const { managed, mode } = useManagedRuntime();
+    if (managed && mode === 'runtime') {
+        return null;
+    }
     return (
         <div className="space-y-6">
             <GitSettings />
@@ -186,7 +199,8 @@ const GitSectionContent: React.FC = () => {
 
 // GitHub section: Connect account for PR/issue workflows
 const GitHubSectionContent: React.FC = () => {
-    if (isVSCodeRuntime()) {
+    const { managed, mode } = useManagedRuntime();
+    if (isVSCodeRuntime() || (managed && mode === 'runtime')) {
         return null;
     }
     return <GitHubSettings />;
@@ -206,7 +220,8 @@ const VoiceSectionContent: React.FC = () => {
 };
 
 const TunnelSectionContent: React.FC = () => {
-    if (isVSCodeRuntime()) {
+    const { managed, mode } = useManagedRuntime();
+    if (isVSCodeRuntime() || (managed && mode === 'runtime')) {
         return null;
     }
     return <TunnelSettings />;
