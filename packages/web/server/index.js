@@ -68,6 +68,7 @@ import { createStaticRoutesRuntime } from './lib/opencode/static-routes-runtime.
 import { createSettingsRuntime } from './lib/opencode/settings-runtime.js';
 import { createOpenCodeResolutionRuntime } from './lib/opencode/opencode-resolution-runtime.js';
 import { createBootstrapRuntime } from './lib/opencode/bootstrap-runtime.js';
+import { resolveManagedMode } from './lib/managed/mode.js';
 import { createSessionRuntime } from './lib/opencode/session-runtime.js';
 import { createOpenCodeWatcherRuntime } from './lib/opencode/watcher.js';
 import { createScheduledTasksRuntime } from './lib/scheduled-tasks/runtime.js';
@@ -1088,6 +1089,11 @@ async function main(options = {}) {
     notificationTriggerRuntime.setGetIsWindowFocused(options.getIsWindowFocused);
   }
 
+  const managedMode = resolveManagedMode(process.env.OPENCHAMBER_MODE);
+  if (managedMode !== 'none') {
+    console.log(`OpenChamber managed mode: ${managedMode}`);
+  }
+
   console.log(`Starting OpenChamber on port ${port === 0 ? 'auto' : port}`);
 
   const sayTTSCapability = await detectSayTtsCapability(process);
@@ -1133,10 +1139,25 @@ async function main(options = {}) {
   expressApp = app;
   server = http.createServer(app);
 
+  const managedSessionId = typeof process.env.MANAGED_SESSION_ID === 'string'
+    ? process.env.MANAGED_SESSION_ID.trim()
+    : null;
+  const hubUrl = typeof process.env.HUB_URL === 'string' ? process.env.HUB_URL.trim() : null;
+  const workspaceDir = managedMode === 'runtime'
+    ? (
+      typeof process.env.WORKSPACE_DIR === 'string' && process.env.WORKSPACE_DIR.trim()
+        ? process.env.WORKSPACE_DIR.trim()
+        : '/workspace'
+    )
+    : null;
   const bootstrapResult = bootstrapRuntime.setupBaseRoutes(app, {
     process,
     openchamberVersion: OPENCHAMBER_VERSION,
     runtimeName: process.env.OPENCHAMBER_RUNTIME || 'web',
+    managedMode,
+    managedSessionId,
+    hubUrl,
+    workspaceDir,
     serverStartedAt,
     gracefulShutdown,
     getHealthSnapshot: () => {

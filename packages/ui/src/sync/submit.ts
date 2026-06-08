@@ -5,20 +5,41 @@ import { useDirectoryStore, useSyncDirectory } from "./sync-context"
 import { useSync } from "./use-sync"
 
 // ---------------------------------------------------------------------------
-// Ascending ID generator — monotonic timestamp + sequence counter
+// 仅本地使用的 optimistic identity。规范 OpenCode ID 来自 OpenCode 或
+// Runtime message adapter，而不是浏览器时间。
 // ---------------------------------------------------------------------------
 
-let counter = 0
+const ID_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
-function ascending(prefix: string): string {
-  const now = Date.now()
-  const seq = (counter++ % 1000).toString().padStart(3, "0")
-  return `${prefix}_${now}${seq}`
+function randomBase62(length: number): string {
+  const bytes = new Uint8Array(length)
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    crypto.getRandomValues(bytes)
+  } else {
+    for (let index = 0; index < length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256)
+    }
+  }
+  let result = ""
+  for (let index = 0; index < length; index += 1) {
+    result += ID_CHARS[bytes[index] % ID_CHARS.length]
+  }
+  return result
+}
+
+function localId(prefix: string): string {
+  return `${prefix}_${randomBase62(24)}`
+}
+
+function clientRequestId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID()
+  }
+  return `req_${randomBase62(32)}`
 }
 
 // ---------------------------------------------------------------------------
-// Prompt submission with optimistic updates
-// Prompt submission with optimistic message insertion
+// 带 optimistic 插入的 prompt 提交。
 // ---------------------------------------------------------------------------
 
 export type SubmitInput = {
@@ -39,9 +60,10 @@ export function usePromptSubmit() {
 
   const submit = useCallback(
     async (input: SubmitInput) => {
-      const messageID = ascending("message")
+      const messageID = localId("optimistic_msg")
+      const requestID = clientRequestId()
 
-      // Build optimistic user message
+      // 构造 optimistic 用户消息。
       const message: Message = {
         id: messageID,
         sessionID: input.sessionID,
@@ -52,9 +74,9 @@ export function usePromptSubmit() {
         variant: input.variant,
       } as Message
 
-      // Build optimistic parts
+      // 构造 optimistic parts。
       const textPart: Part = {
-        id: ascending("part"),
+        id: localId("optimistic_prt"),
         sessionID: input.sessionID,
         messageID,
         type: "text",
@@ -63,7 +85,7 @@ export function usePromptSubmit() {
 
       const optimisticParts: Part[] = [textPart, ...(input.parts ?? [])]
 
-      // Set busy status optimistically
+      // optimistic 设置 busy 状态。
       store.setState((prev) => ({
         ...prev,
         session_status: {
@@ -72,7 +94,7 @@ export function usePromptSubmit() {
         },
       }))
 
-      // Add optimistic message immediately
+      // 立即加入 optimistic 消息。
       sync.optimistic.add({
         sessionID: input.sessionID,
         message,
@@ -80,9 +102,10 @@ export function usePromptSubmit() {
       })
 
       try {
+        let canonicalMessageID: string
         if (input.command) {
-          // Slash command
-          await opencodeClient.sendCommand({
+          // Slash command。
+          canonicalMessageID = await opencodeClient.sendCommand({
             id: input.sessionID,
             command: input.command?.name ?? "",
             arguments: input.command?.arguments ?? "",
@@ -92,30 +115,39 @@ export function usePromptSubmit() {
             variant: input.variant,
             files: input.images,
             messageId: messageID,
+            clientRequestId: requestID,
             directory,
-          }).then(() => undefined)
+          })
         } else {
-          // Regular prompt
-          await opencodeClient.sendMessage({
+          // 常规 prompt。
+          canonicalMessageID = await opencodeClient.sendMessage({
             id: input.sessionID,
             agent: input.agent,
             providerID: input.model.providerID,
             modelID: input.model.modelID,
             messageId: messageID,
+            clientRequestId: requestID,
             text: input.text,
             files: input.images,
             variant: input.variant,
             directory,
-          }).then(() => undefined)
+          })
+        }
+        if (canonicalMessageID && canonicalMessageID !== messageID) {
+          sync.optimistic.confirm({
+            sessionID: input.sessionID,
+            optimisticMessageID: messageID,
+            canonicalMessageID,
+          })
         }
         return true
       } catch (error) {
-        // Revert optimistic on failure
+        // 失败时回滚 optimistic 内容。
         sync.optimistic.remove({
           sessionID: input.sessionID,
           messageID,
         })
-        // Reset status
+        // 重置状态。
         store.setState((prev) => ({
           ...prev,
           session_status: {

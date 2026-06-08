@@ -351,8 +351,9 @@ describe("optimisticSend target directory", () => {
       content: "hello",
       providerID: "provider",
       modelID: "model",
-      send: async (messageID) => {
-        sentMessageID = messageID
+      send: async ({ optimisticMessageID, clientRequestId }) => {
+        sentMessageID = optimisticMessageID
+        expect(clientRequestId.length > 0).toBe(true)
       },
     })
 

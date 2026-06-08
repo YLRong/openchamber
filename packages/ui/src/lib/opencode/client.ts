@@ -19,6 +19,7 @@ import { runtimeFetch } from "@/lib/runtime-fetch";
 import { getRuntimeKey } from "@/lib/runtime-switch";
 import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry";
 import { markStartupTrace } from "@/lib/startupTrace";
+import { useManagedRuntimeStore } from "@/stores/useManagedRuntimeStore";
 import {
   assertProviderCircuitClosed,
   recordProviderSuccess,
@@ -123,6 +124,22 @@ const isRetryableFetchError = (error: unknown): boolean => {
   if (error instanceof DOMException && error.name === 'AbortError') return true;
   if (error instanceof TypeError) return true;
   return false;
+};
+
+const isLocalOptimisticMessageId = (value: string | undefined): boolean => {
+  return typeof value === "string" && value.startsWith("optimistic_");
+};
+
+const createClientRequestId = (): string => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `req_${randomBase62(32)}`;
+};
+
+const shouldUseRuntimeMessageAdapter = (): boolean => {
+  const state = useManagedRuntimeStore.getState();
+  return state.managed === true && state.mode === "runtime";
 };
 
 const ensureAbsoluteBaseUrl = (candidate: string): string => {
@@ -723,13 +740,14 @@ class OpencodeService {
     agent?: string;
     variant?: string;
     files?: Array<FileInputLite>;
-    /** Additional text/file parts to include (for batch sending queued messages) */
+    /** 用于批量发送队列消息的附加文本或文件 parts */
     additionalParts?: Array<{
       text: string;
       synthetic?: boolean;
       files?: Array<FileInputLite>;
     }>;
     messageId?: string;
+    clientRequestId?: string;
     agentMentions?: Array<{ name: string; source?: { value: string; start: number; end: number } }>;
     format?: {
       type: 'json_schema';
@@ -738,9 +756,10 @@ class OpencodeService {
     };
     directory?: string | null;
   }): Promise<string> {
-    // Reuse one client-side message ID across retries. The server accepts this
-    // as the real user message ID, making ambiguous network retries idempotent.
-    const messageId = params.messageId ?? ascendingId("msg");
+    // SDK fallback 仍需要在重试之间保持稳定的 messageID。Managed Runtime
+    // 提交使用 clientRequestId 做幂等，并从 Runtime adapter 获取规范 OpenCode messageID。
+    const messageId = isLocalOptimisticMessageId(params.messageId) ? ascendingId("msg") : (params.messageId ?? ascendingId("msg"));
+    const clientRequestId = params.clientRequestId ?? createClientRequestId();
 
     // Build parts array using SDK types (TextPartInput | FilePartInput) plus lightweight agent parts
     const parts: Array<TextPartInput | FilePartInput | AgentPartInputLite> = [];
@@ -823,29 +842,52 @@ class OpencodeService {
     assertProviderCircuitClosed(params.providerID);
 
     let response!: Response;
+    const useRuntimeAdapter = shouldUseRuntimeMessageAdapter();
 
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const result = await this.client.session.promptAsync({
-          sessionID: params.id,
-          ...(requestDirectory ? { directory: requestDirectory } : {}),
-          model: {
-            providerID: params.providerID,
-            modelID: params.modelID,
-          },
-          agent: params.agent,
-          variant: params.variant,
-          messageID: messageId,
-          ...(params.format ? { format: params.format } : {}),
-          parts,
-        });
-        if (result.response instanceof Response) {
-          response = result.response;
-        } else if (result.error) {
-          const status = (result as SdkResult<unknown>).response?.status || 500;
-          response = new Response(JSON.stringify(result.error), { status });
+        if (useRuntimeAdapter) {
+          response = await runtimeFetch(`/api/openchamber/runtime-message/session/${encodeURIComponent(params.id)}/prompt`, {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              clientRequestId,
+              ...(requestDirectory ? { directory: requestDirectory } : {}),
+              model: {
+                providerID: params.providerID,
+                modelID: params.modelID,
+              },
+              agent: params.agent,
+              variant: params.variant,
+              ...(params.format ? { format: params.format } : {}),
+              parts,
+            }),
+          });
         } else {
-          response = new Response(JSON.stringify(result.data ?? true), { status: 200 });
+          const result = await this.client.session.promptAsync({
+            sessionID: params.id,
+            ...(requestDirectory ? { directory: requestDirectory } : {}),
+            model: {
+              providerID: params.providerID,
+              modelID: params.modelID,
+            },
+            agent: params.agent,
+            variant: params.variant,
+            messageID: messageId,
+            ...(params.format ? { format: params.format } : {}),
+            parts,
+          });
+          if (result.response instanceof Response) {
+            response = result.response;
+          } else if (result.error) {
+            const status = (result as SdkResult<unknown>).response?.status || 500;
+            response = new Response(JSON.stringify(result.error), { status });
+          } else {
+            response = new Response(JSON.stringify(result.data ?? true), { status: 200 });
+          }
         }
       } catch (error) {
         if (attempt < 2 && isRetryableFetchError(error)) {
@@ -863,6 +905,13 @@ class OpencodeService {
 
       if (response.ok) {
         recordProviderSuccess(params.providerID);
+        if (useRuntimeAdapter) {
+          const payload = await response.json().catch(() => null) as { messageID?: unknown } | null;
+          if (typeof payload?.messageID !== 'string' || !payload.messageID) {
+            throw new Error('Runtime prompt adapter returned no canonical message ID');
+          }
+          return payload.messageID;
+        }
         return messageId;
       }
 
@@ -886,8 +935,7 @@ class OpencodeService {
       recordProviderError(params.providerID, response.status);
       throw error;
     }
-    // Defensive fallback — all loop paths return/throw, but TypeScript
-    // control flow analysis cannot prove exhaustiveness without this.
+    // 防御性兜底：循环里的路径都会 return 或 throw，但 TypeScript 无法证明穷尽性。
     throw new Error('Failed to send message after retries');
   }
 
@@ -901,9 +949,11 @@ class OpencodeService {
     variant?: string;
     files?: Array<FileInputLite>;
     messageId?: string;
+    clientRequestId?: string;
     directory?: string | null;
   }): Promise<string> {
-    const tempMessageId = params.messageId ?? ascendingId("msg");
+    const tempMessageId = isLocalOptimisticMessageId(params.messageId) ? ascendingId("msg") : (params.messageId ?? ascendingId("msg"));
+    const clientRequestId = params.clientRequestId ?? createClientRequestId();
 
     const parts: FilePartInput[] = [];
     if (params.files && params.files.length > 0) {
@@ -913,6 +963,35 @@ class OpencodeService {
     }
 
     const requestDirectory = this.normalizeCandidatePath(params.directory ?? null) ?? this.currentDirectory;
+
+    if (shouldUseRuntimeMessageAdapter()) {
+      const response = await runtimeFetch(`/api/openchamber/runtime-message/session/${encodeURIComponent(params.id)}/command`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          clientRequestId,
+          ...(requestDirectory ? { directory: requestDirectory } : {}),
+          command: params.command,
+          arguments: params.arguments ?? '',
+          model: `${params.providerID}/${params.modelID}`,
+          agent: params.agent,
+          variant: params.variant,
+          ...(parts.length > 0 ? { parts } : {}),
+        }),
+      });
+      if (!response.ok) {
+        const detail = await response.text().catch(() => '');
+        throw new Error(`session.command failed (${response.status})${detail ? `: ${detail}` : ''}`);
+      }
+      const payload = await response.json().catch(() => null) as { messageID?: unknown } | null;
+      if (typeof payload?.messageID !== 'string' || !payload.messageID) {
+        throw new Error('Runtime command adapter returned no canonical message ID');
+      }
+      return payload.messageID;
+    }
 
     const response = await this.client.session.command({
       sessionID: params.id,
