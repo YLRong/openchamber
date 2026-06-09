@@ -107,6 +107,10 @@ mock.module("@/lib/opencode/client", () => ({
   },
 }))
 
+mock.module("./runtime-message-time", () => ({
+  getRuntimeMessageNow: mock(() => Promise.resolve(1_780_000_000_000)),
+}))
+
 // Mock useConfigStore
 mock.module("@/stores/useConfigStore", () => ({
   useConfigStore: {

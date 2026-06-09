@@ -16,6 +16,7 @@ import { isSyntheticPart } from "@/lib/messages/synthetic"
 import { materializeSessionSnapshots } from "./materialization"
 import { stripMessageDiffSnapshots } from "./sanitize"
 import { sessionEvents } from "@/lib/sessionEvents"
+import { getRuntimeMessageNow } from "./runtime-message-time"
 
 const MESSAGE_REFETCH_LIMIT = 200
 const MESSAGE_REFETCH_SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
@@ -561,6 +562,7 @@ export async function optimisticSend(input: {
   const messageID = localOptimisticId("optimistic_msg")
   const textPartId = localOptimisticId("optimistic_prt")
   const clientRequestId = createClientRequestId()
+  const createdAt = await getRuntimeMessageNow()
 
   const optimisticParts: Part[] = [
     { id: textPartId, messageID, type: "text", text: input.content } as Part,
@@ -582,7 +584,7 @@ export async function optimisticSend(input: {
     agent: input.agent ?? "",
     model: `${input.providerID}/${input.modelID}`,
     metadata: { openchamberClientRequestId: clientRequestId } as Record<string, unknown>,
-    time: { created: Date.now(), completed: 0 },
+    time: { created: createdAt, completed: 0 },
   } as unknown as Message
 
   // 写入 store 并注册到 shadow Map，供 mergeOptimisticPage 清理。
