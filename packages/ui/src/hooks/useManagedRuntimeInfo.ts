@@ -25,6 +25,42 @@ const availableFeatures: ManagedRuntimeFeatures = {
   remoteInstances: true,
 };
 
+const MANAGED_RUNTIME_SESSION_STORAGE_KEY = 'openchamber.managedRuntimeSessionId';
+const MANAGED_RUNTIME_SCOPED_STORAGE_KEYS = [
+  'config-store',
+  'homeDirectory',
+  'lastDirectory',
+  'oc.sessions.activeSessionByProject',
+  'oc.sessions.folderCollapse',
+  'oc.sessions.folders',
+  'oc.sessions.groupCollapse',
+  'oc.sessions.groupOrder',
+  'openchamber.pwaRecentSessions',
+];
+
+function resetManagedRuntimeStorageIfNeeded(info: ManagedRuntimeInfo): boolean {
+  if (typeof window === 'undefined' || !info.managed || info.mode !== 'runtime' || !info.managedSessionId) {
+    return false;
+  }
+
+  try {
+    const previousSessionId = window.localStorage.getItem(MANAGED_RUNTIME_SESSION_STORAGE_KEY);
+    if (previousSessionId === info.managedSessionId) {
+      return false;
+    }
+
+    // NodePort 可能被不同 Managed session 复用；本地持久化状态必须按 session 隔离。
+    for (const key of MANAGED_RUNTIME_SCOPED_STORAGE_KEYS) {
+      window.localStorage.removeItem(key);
+    }
+    window.localStorage.setItem(MANAGED_RUNTIME_SESSION_STORAGE_KEY, info.managedSessionId);
+    window.location.reload();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function normalizeInfo(data: SystemInfoResponse | null | undefined): ManagedRuntimeInfo {
   if (!data || typeof data !== 'object' || data.managed !== true) {
     return {
@@ -75,6 +111,9 @@ export function useManagedRuntimeInfo() {
     const refresh = async () => {
       try {
         const info = await fetchManagedRuntimeInfo();
+        if (resetManagedRuntimeStorageIfNeeded(info)) {
+          return;
+        }
         if (!disposedRef.current) {
           setInfo(info);
         }
