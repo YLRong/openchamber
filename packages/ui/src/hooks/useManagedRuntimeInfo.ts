@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { normalizeWorkspaceBootstrapDiagnostics } from '@/lib/managedRuntimeDiagnostics';
 import { useManagedRuntimeStore, type ManagedRuntimeFeatures, type ManagedRuntimeInfo } from '@/stores/useManagedRuntimeStore';
 
 interface SystemInfoResponse {
@@ -13,7 +14,8 @@ interface SystemInfoResponse {
   managedSessionId?: string | null;
   hubUrl?: string | null;
   workspaceDir?: string | null;
-  features?: ManagedRuntimeFeatures;
+  workspaceBootstrap?: unknown;
+  features?: Partial<ManagedRuntimeFeatures>;
 }
 
 const POLL_INTERVAL_MS = 30_000;
@@ -61,7 +63,7 @@ function resetManagedRuntimeStorageIfNeeded(info: ManagedRuntimeInfo): boolean {
   }
 }
 
-function normalizeInfo(data: SystemInfoResponse | null | undefined): ManagedRuntimeInfo {
+export function normalizeManagedRuntimeInfo(data: SystemInfoResponse | null | undefined): ManagedRuntimeInfo {
   if (!data || typeof data !== 'object' || data.managed !== true) {
     return {
       mode: null,
@@ -69,6 +71,7 @@ function normalizeInfo(data: SystemInfoResponse | null | undefined): ManagedRunt
       managedSessionId: null,
       hubUrl: null,
       workspaceDir: null,
+      workspaceBootstrap: normalizeWorkspaceBootstrapDiagnostics(null),
       features: availableFeatures,
     };
   }
@@ -79,6 +82,7 @@ function normalizeInfo(data: SystemInfoResponse | null | undefined): ManagedRunt
     managedSessionId: data.managedSessionId ?? null,
     hubUrl: data.hubUrl ?? null,
     workspaceDir: data.workspaceDir ?? null,
+    workspaceBootstrap: normalizeWorkspaceBootstrapDiagnostics(data.workspaceBootstrap),
     features: {
       tunnel: data.features?.tunnel ?? false,
       desktop: data.features?.desktop ?? false,
@@ -97,7 +101,7 @@ async function fetchManagedRuntimeInfo(): Promise<ManagedRuntimeInfo> {
     throw new Error(`Server responded with ${response.status}`);
   }
   const data = (await response.json()) as SystemInfoResponse;
-  return normalizeInfo(data);
+  return normalizeManagedRuntimeInfo(data);
 }
 
 export function useManagedRuntimeInfo() {
@@ -144,6 +148,7 @@ export function useManagedRuntime() {
     managedSessionId: s.managedSessionId,
     hubUrl: s.hubUrl,
     workspaceDir: s.workspaceDir,
+    workspaceBootstrap: s.workspaceBootstrap,
     features: s.features,
     isLoading: s.isLoading,
     error: s.error,
