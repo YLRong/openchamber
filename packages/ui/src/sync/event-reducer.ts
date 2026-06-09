@@ -140,6 +140,74 @@ function areMessageUpdateFieldsEqual(existing: Message, next: Message): boolean 
   return true
 }
 
+const LOCAL_OPTIMISTIC_MESSAGE_PREFIX = "optimistic_msg_"
+
+function isLocalOptimisticUserMessage(message: Message): boolean {
+  return message.role === "user" && message.id.startsWith(LOCAL_OPTIMISTIC_MESSAGE_PREFIX)
+}
+
+function getMessageAgent(message: Message): string | undefined {
+  const agent = (message as { agent?: unknown }).agent
+  return typeof agent === "string" && agent.length > 0 ? agent : undefined
+}
+
+function getMessageModelKey(message: Message): string | undefined {
+  const providerID = (message as { providerID?: unknown }).providerID
+    ?? (message as { model?: { providerID?: unknown } }).model?.providerID
+  const modelID = (message as { modelID?: unknown }).modelID
+    ?? (message as { model?: { modelID?: unknown } }).model?.modelID
+
+  if (typeof providerID === "string" && typeof modelID === "string") {
+    return `${providerID}/${modelID}`
+  }
+
+  const model = (message as { model?: unknown }).model
+  return typeof model === "string" && model.length > 0 ? model : undefined
+}
+
+function getMessageCreatedAt(message: Message): number | undefined {
+  const created = (message.time as { created?: unknown })?.created
+  return typeof created === "number" ? created : undefined
+}
+
+function canReplaceOptimisticUserMessage(optimistic: Message, canonical: Message): boolean {
+  if (canonical.role !== "user" || canonical.id.startsWith(LOCAL_OPTIMISTIC_MESSAGE_PREFIX)) return false
+  if (!isLocalOptimisticUserMessage(optimistic)) return false
+
+  const optimisticAgent = getMessageAgent(optimistic)
+  const canonicalAgent = getMessageAgent(canonical)
+  if (optimisticAgent && canonicalAgent && optimisticAgent !== canonicalAgent) return false
+
+  const optimisticModel = getMessageModelKey(optimistic)
+  const canonicalModel = getMessageModelKey(canonical)
+  if (optimisticModel && canonicalModel && optimisticModel !== canonicalModel) return false
+
+  return true
+}
+
+function findOptimisticUserReplacementIndex(messages: Message[], canonical: Message): number {
+  let bestIndex = -1
+  let bestDistance = Number.POSITIVE_INFINITY
+  const canonicalCreatedAt = getMessageCreatedAt(canonical)
+
+  for (let index = 0; index < messages.length; index += 1) {
+    const candidate = messages[index]
+    if (!canReplaceOptimisticUserMessage(candidate, canonical)) continue
+
+    const candidateCreatedAt = getMessageCreatedAt(candidate)
+    const distance = typeof canonicalCreatedAt === "number" && typeof candidateCreatedAt === "number"
+      ? Math.abs(canonicalCreatedAt - candidateCreatedAt)
+      : 0
+
+    if (distance < bestDistance) {
+      bestIndex = index
+      bestDistance = distance
+    }
+  }
+
+  return bestIndex
+}
+
 // ---------------------------------------------------------------------------
 // Global events
 // ---------------------------------------------------------------------------
@@ -298,10 +366,22 @@ export function applyDirectoryEvent(
 
     case "message.updated": {
       const info = (event.properties as { info: Message }).info
-      const messages = draft.message[info.sessionID]
+      let messages = draft.message[info.sessionID]
       if (!messages) {
         draft.message[info.sessionID] = [info]
         return true
+      }
+      let removedOptimistic = false
+      const optimisticIndex = findOptimisticUserReplacementIndex(messages, info)
+      if (optimisticIndex >= 0) {
+        // 服务端用户消息到达时，立即移除同一条发送产生的本地气泡。
+        const optimisticMessageID = messages[optimisticIndex].id
+        const next = [...messages]
+        next.splice(optimisticIndex, 1)
+        delete draft.part[optimisticMessageID]
+        messages = next
+        draft.message[info.sessionID] = messages
+        removedOptimistic = true
       }
       const result = Binary.search(messages, info.id, (m) => m.id)
       if (result.found) {
@@ -310,7 +390,7 @@ export function applyDirectoryEvent(
         const unchanged = areMessageUpdateFieldsEqual(existing, info)
         if (unchanged) {
           syncDebug.reducer.messageUpdatedUnchanged(info.sessionID, info.id, info.role, (info as { finish?: unknown }).finish, (info.time as { completed?: number })?.completed)
-          return false
+          return removedOptimistic
         }
         const next = [...messages]
         next[result.index] = info
