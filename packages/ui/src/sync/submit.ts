@@ -3,6 +3,7 @@ import { useCallback } from "react"
 import { opencodeClient } from "@/lib/opencode/client"
 import { useDirectoryStore, useSyncDirectory } from "./sync-context"
 import { useSync } from "./use-sync"
+import { getRuntimeMessageNow } from "./runtime-message-time"
 
 // ---------------------------------------------------------------------------
 // 仅本地使用的 optimistic identity。规范 OpenCode ID 来自 OpenCode 或
@@ -62,13 +63,14 @@ export function usePromptSubmit() {
     async (input: SubmitInput) => {
       const messageID = localId("optimistic_msg")
       const requestID = clientRequestId()
+      const createdAt = await getRuntimeMessageNow()
 
       // 构造 optimistic 用户消息。
       const message: Message = {
         id: messageID,
         sessionID: input.sessionID,
         role: "user",
-        time: { created: Date.now() },
+        time: { created: createdAt },
         agent: input.agent,
         model: input.model,
         variant: input.variant,
