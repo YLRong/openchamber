@@ -1,4 +1,9 @@
 import { create } from 'zustand';
+import {
+  areWorkspaceBootstrapDiagnosticsEqual,
+  DEFAULT_WORKSPACE_BOOTSTRAP_DIAGNOSTICS,
+  type WorkspaceBootstrapDiagnostics,
+} from '@/lib/managedRuntimeDiagnostics';
 
 export interface ManagedRuntimeFeatures {
   tunnel: boolean;
@@ -13,6 +18,7 @@ export interface ManagedRuntimeInfo {
   managedSessionId: string | null;
   hubUrl: string | null;
   workspaceDir: string | null;
+  workspaceBootstrap: WorkspaceBootstrapDiagnostics;
   features: ManagedRuntimeFeatures;
 }
 
@@ -37,6 +43,7 @@ export const useManagedRuntimeStore = create<ManagedRuntimeState>((set) => ({
   managedSessionId: null,
   hubUrl: null,
   workspaceDir: null,
+  workspaceBootstrap: DEFAULT_WORKSPACE_BOOTSTRAP_DIAGNOSTICS,
   features: defaultFeatures,
   isLoading: true,
   error: null,
@@ -49,6 +56,9 @@ export const useManagedRuntimeStore = create<ManagedRuntimeState>((set) => ({
     )
       ? state.features
       : info.features;
+    const workspaceBootstrap = areWorkspaceBootstrapDiagnosticsEqual(state.workspaceBootstrap, info.workspaceBootstrap)
+      ? state.workspaceBootstrap
+      : info.workspaceBootstrap;
 
     if (
       state.mode === info.mode
@@ -56,6 +66,7 @@ export const useManagedRuntimeStore = create<ManagedRuntimeState>((set) => ({
       && state.managedSessionId === info.managedSessionId
       && state.hubUrl === info.hubUrl
       && state.workspaceDir === info.workspaceDir
+      && state.workspaceBootstrap === workspaceBootstrap
       && state.features === features
       && state.isLoading === false
       && state.error === null
@@ -70,6 +81,7 @@ export const useManagedRuntimeStore = create<ManagedRuntimeState>((set) => ({
       managedSessionId: info.managedSessionId,
       hubUrl: info.hubUrl,
       workspaceDir: info.workspaceDir,
+      workspaceBootstrap,
       features,
       isLoading: false,
       error: null,
