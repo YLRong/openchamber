@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Event, Part, PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { Event, Message, Part, PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { applyDirectoryEvent } from "../event-reducer"
 import { INITIAL_STATE, type State } from "../types"
 
@@ -135,6 +135,42 @@ describe("applyDirectoryEvent", () => {
 
     expect(draft.part.msg_1.map((item) => item.id)).toEqual(["prt_1"])
     expect(result).toBe(true)
+  })
+
+  test("replaces optimistic user message when canonical message update arrives", () => {
+    const optimisticMessage = {
+      id: "optimistic_msg_local",
+      sessionID: "ses_1",
+      role: "user",
+      agent: "build",
+      model: { providerID: "opencode", modelID: "big-pickle" },
+      time: { created: 1000 },
+    } as Message
+    const canonicalMessage = {
+      id: "msg_server",
+      sessionID: "ses_1",
+      role: "user",
+      agent: "build",
+      model: { providerID: "opencode", modelID: "big-pickle" },
+      time: { created: 2000 },
+    } as Message
+    const draft = state({
+      message: { ses_1: [optimisticMessage] },
+      part: {
+        optimistic_msg_local: [
+          { id: "optimistic_prt_local", messageID: "optimistic_msg_local", type: "text", text: "你好" } as Part,
+        ],
+      },
+    })
+
+    const result = applyDirectoryEvent(draft, {
+      type: "message.updated",
+      properties: { info: canonicalMessage },
+    } as Event)
+
+    expect(result).toBe(true)
+    expect(draft.message.ses_1.map((item) => item.id)).toEqual(["msg_server"])
+    expect(draft.part.optimistic_msg_local).toBe(undefined)
   })
 
   test("skips duplicate session status events", () => {
