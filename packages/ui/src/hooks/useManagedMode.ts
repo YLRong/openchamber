@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { useManagedRuntimeStore } from '@/stores/useManagedRuntimeStore';
+import { normalizeManagedRuntimeInfo } from '@/hooks/useManagedRuntimeInfo';
 
 interface SystemInfoResponse {
   mode?: 'runtime';
@@ -8,6 +9,7 @@ interface SystemInfoResponse {
   managedSessionId?: string | null;
   hubUrl?: string | null;
   workspaceDir?: string | null;
+  workspaceBootstrap?: unknown;
   features?: {
     tunnel?: boolean;
     desktop?: boolean;
@@ -35,36 +37,17 @@ export function useManagedMode(): { mode: ManagedMode; isLoading: boolean } {
         });
         if (!response.ok) {
           if (!cancelled) {
-            setInfo({ mode: null, managed: false, managedSessionId: null, hubUrl: null, workspaceDir: null, features: { tunnel: true, desktop: true, selfUpdate: true, remoteInstances: true } });
+            setInfo(normalizeManagedRuntimeInfo(null));
           }
           return;
         }
         const data = (await response.json()) as SystemInfoResponse;
         if (cancelled) return;
 
-        const serverFeatures = data.features;
-        const features = {
-          tunnel: serverFeatures?.tunnel ?? !data.managed,
-          desktop: serverFeatures?.desktop ?? !data.managed,
-          selfUpdate: serverFeatures?.selfUpdate ?? !data.managed,
-          remoteInstances: serverFeatures?.remoteInstances ?? !data.managed,
-        };
-
-        if (data.managed && data.mode === 'runtime') {
-          setInfo({
-            mode: 'runtime',
-            managed: true,
-            managedSessionId: data.managedSessionId ?? null,
-            hubUrl: data.hubUrl ?? null,
-            workspaceDir: data.workspaceDir ?? null,
-            features,
-          });
-        } else {
-          setInfo({ mode: null, managed: false, managedSessionId: null, hubUrl: null, workspaceDir: null, features });
-        }
+        setInfo(normalizeManagedRuntimeInfo(data));
       } catch {
         if (!cancelled) {
-          setInfo({ mode: null, managed: false, managedSessionId: null, hubUrl: null, workspaceDir: null, features: { tunnel: true, desktop: true, selfUpdate: true, remoteInstances: true } });
+          setInfo(normalizeManagedRuntimeInfo(null));
         }
       }
     }
