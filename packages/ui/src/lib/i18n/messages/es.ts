@@ -1397,6 +1397,8 @@ export const dict: Record<I18nKey, string> = {
   "helpDialog.proTips.themeCycling": "El ciclo de tema recuerda tu preferencia entre sesiones",
   "header.actions.rightSidebarWithShortcut": "Barra lateral derecha ({shortcut})",
   "header.actions.toggleRightSidebarAria": "Mostrar u ocultar barra lateral derecha",
+  "header.actions.openSettings": "Configuración",
+  "header.actions.openSettingsAria": "Abrir configuración",
   "header.actions.openAppMenu": "Menú de OpenChamber",
   "header.actions.openAppMenuAria": "Abrir menú de OpenChamber",
   "header.actions.openSessionsWithShortcut": "Abrir sesiones ({shortcut})",
