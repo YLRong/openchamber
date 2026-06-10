@@ -1401,6 +1401,8 @@ export const dict: Record<I18nKey, string> = {
   'helpDialog.proTips.themeCycling': '主題循環會記住你在各會話中的偏好',
   'header.actions.rightSidebarWithShortcut': '右側邊欄（{shortcut}）',
   'header.actions.toggleRightSidebarAria': '切換右側邊欄',
+  'header.actions.openSettings': '設定',
+  'header.actions.openSettingsAria': '開啟設定',
   'header.actions.openAppMenu': 'OpenChamber 選單',
   'header.actions.openAppMenuAria': '開啟 OpenChamber 選單',
   'header.actions.openSessionsWithShortcut': '開啟會話（{shortcut}）',
