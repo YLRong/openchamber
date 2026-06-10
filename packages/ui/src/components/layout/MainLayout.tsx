@@ -1,7 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { animate, motion, useMotionValue } from 'motion/react';
 import { Header } from './Header';
-import { ManagedRuntimeBanner } from './ManagedRuntimeBanner';
 import { BottomTerminalDock } from './BottomTerminalDock';
 import { Sidebar, SIDEBAR_CONTENT_WIDTH } from './Sidebar';
 import { RightSidebar, RIGHT_SIDEBAR_CONTENT_WIDTH } from './RightSidebar';
@@ -478,7 +477,6 @@ export const MainLayout: React.FC = () => {
                     setRightSidebarOpen: setMobileRightSidebarOpen,
                 }}>
                     {/* Mobile: header + drawer mode */}
-                    <ManagedRuntimeBanner />
                     {!isSettingsDialogOpen && <Header 
                         onToggleLeftDrawer={() => {
                             if (isManagedRuntime) {
@@ -561,7 +559,6 @@ export const MainLayout: React.FC = () => {
                 <>
                     {/* Desktop: full-width Header above [Sidebar | chat-frame | RightSidebar] row */}
                     <div className="flex flex-1 flex-col overflow-hidden">
-                        <ManagedRuntimeBanner />
                         <Header hideSessionControls={isManagedRuntime} />
                         <div className="relative flex flex-1 min-h-0 overflow-hidden bg-sidebar" data-page-scroll-lock="true">
                             <div
