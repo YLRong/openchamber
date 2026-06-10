@@ -710,6 +710,7 @@ export const Header: React.FC<HeaderProps> = ({
   const toggleSidebar = useUIStore((state) => state.toggleSidebar);
   const toggleBottomTerminal = useUIStore((state) => state.toggleBottomTerminal);
   const toggleRightSidebar = useUIStore((state) => state.toggleRightSidebar);
+  const setSettingsDialogOpen = useUIStore((state) => state.setSettingsDialogOpen);
   const openContextOverview = useUIStore((state) => state.openContextOverview);
   const openContextPlan = useUIStore((state) => state.openContextPlan);
   const openContextBrowser = useUIStore((state) => state.openContextBrowser);
@@ -1517,6 +1518,10 @@ export const Header: React.FC<HeaderProps> = ({
     openContextBrowser(directory);
   }, [closeContextPanel, contextPanelByDirectory, openContextBrowser, openDirectory]);
 
+  const handleOpenSettings = React.useCallback(() => {
+    setSettingsDialogOpen(true);
+  }, [setSettingsDialogOpen]);
+
   const isContextPlanActive = React.useMemo(() => {
     const directory = normalize(openDirectory || '');
     if (!directory) {
@@ -2042,6 +2047,12 @@ export const Header: React.FC<HeaderProps> = ({
         ariaLabel={t('header.actions.toggleRightSidebarAria')}
         onClick={toggleRightSidebar}
         Icon={'layout-right'}
+      />
+      <HeaderIconActionButton
+        title={t('header.actions.openSettings')}
+        ariaLabel={t('header.actions.openSettingsAria')}
+        onClick={handleOpenSettings}
+        Icon={'settings-3'}
       />
       <DesktopGitHubControl
         isMobile={isMobile}
