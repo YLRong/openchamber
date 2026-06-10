@@ -1397,6 +1397,8 @@ export const dict: Record<I18nKey, string> = {
   "helpDialog.proTips.themeCycling": "Перемикання теми запам’ятовує ваші переваги протягом сесій",
   "header.actions.rightSidebarWithShortcut": "Права бічна панель ({shortcut})",
   "header.actions.toggleRightSidebarAria": "Перемкнути праву бічну панель",
+  "header.actions.openSettings": "Налаштування",
+  "header.actions.openSettingsAria": "Відкрити налаштування",
   "header.actions.openAppMenu": "Меню OpenChamber",
   "header.actions.openAppMenuAria": "Відкрити меню OpenChamber",
   "header.actions.openSessionsWithShortcut": "Відкрити сесії ({shortcut})",

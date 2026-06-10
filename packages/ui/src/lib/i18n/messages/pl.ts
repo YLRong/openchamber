@@ -1951,6 +1951,8 @@ export const dict: Record<I18nKey, string> = {
   'header.actions.openSessionsWithShortcut': 'Otwórz sesje ({shortcut})',
   'header.actions.planWithShortcut': 'Plan ({shortcut})',
   'header.actions.rightSidebarWithShortcut': 'Prawy panel boczny ({shortcut})',
+  'header.actions.openSettings': 'Ustawienia',
+  'header.actions.openSettingsAria': 'Otwórz ustawienia',
   'header.actions.terminalPanelWithShortcut': 'Panel terminala ({shortcut})',
   'header.actions.toggleRightSidebarAria': 'Przełącz prawy panel boczny',
   'header.actions.toggleTerminalPanelAria': 'Przełącz panel terminala',
