@@ -1494,6 +1494,8 @@ export const dict: Record<I18nKey, string> = {
   'helpDialog.proTips.themeCycling': '테마 순환은 세션 간에도 선호 설정을 기억합니다',
   'header.actions.rightSidebarWithShortcut': '오른쪽 사이드바 ({shortcut})',
   'header.actions.toggleRightSidebarAria': '오른쪽 사이드바 토글',
+  'header.actions.openSettings': '설정',
+  'header.actions.openSettingsAria': '설정 열기',
   'header.actions.openAppMenu': 'OpenChamber 메뉴',
   'header.actions.openAppMenuAria': 'OpenChamber 메뉴 열기',
   'header.actions.openSessionsWithShortcut': '세션 ({shortcut}) 열기',
