@@ -65,6 +65,7 @@ import { OpenInAppButton } from '@/components/desktop/OpenInAppButton';
 import { forceKillTerminal } from '@/lib/terminalApi';
 import { useTerminalStore } from '@/stores/useTerminalStore';
 import { SessionSwitcherDropdown } from '@/components/session/SessionSwitcherDropdown';
+import { ManagedRuntimeHeaderStatus, ManagedRuntimeHubButton } from '@/components/layout/ManagedRuntimeHeaderStatus';
 import { canUseElectronDesktopIPC, invokeDesktop, isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, startDesktopWindowDrag, type UpdateInfo } from '@/lib/desktop';
 import { desktopHostsGet, getDesktopHostApiUrl, locationMatchesHost, redactSensitiveUrl } from '@/lib/desktopHosts';
 import { resolveSessionDiffStats } from '@/components/session/sidebar/utils';
@@ -2070,6 +2071,7 @@ export const Header: React.FC<HeaderProps> = ({
       )}
 
       <div className="flex min-w-0 flex-1 items-center pl-3">
+        {hideSessionControls ? <ManagedRuntimeHeaderStatus className="mr-3" /> : null}
         {!hideSessionControls && (
           <SessionSwitcherDropdown>
             <button
@@ -2145,6 +2147,7 @@ export const Header: React.FC<HeaderProps> = ({
             className={cn(desktopHeaderIconButtonClass, showDesktopHeaderContextUsage ? 'mr-3.5' : 'mr-1')}
             Icon={'picture-in-picture-2'}
           />
+          <ManagedRuntimeHubButton />
           {desktopSidebarActions}
           <WindowsWindowControls visible={isWindowsElectronDesktop} />
         </div>
@@ -2154,7 +2157,8 @@ export const Header: React.FC<HeaderProps> = ({
 
   const renderMobile = () => (
     <div className="app-region-drag relative flex items-center gap-2 px-3 py-2 select-none">
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex min-w-0 items-center gap-2 shrink-0">
+        {hideSessionControls ? <ManagedRuntimeHeaderStatus compact /> : null}
         {/* Use drawer toggle when onToggleLeftDrawer is provided, otherwise use legacy session switcher */}
         {hideSessionControls ? null : onToggleLeftDrawer ? (
           <button
@@ -2258,6 +2262,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
+            <ManagedRuntimeHubButton compact />
             {/* Mobile Services Menu (Usage + MCP) */}
             <DropdownMenu
               open={isMobileRateLimitsOpen}
