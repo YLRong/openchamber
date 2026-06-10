@@ -64,7 +64,6 @@ import { DesktopHostSwitcherDialog } from '@/components/desktop/DesktopHostSwitc
 import { OpenInAppButton } from '@/components/desktop/OpenInAppButton';
 import { forceKillTerminal } from '@/lib/terminalApi';
 import { useTerminalStore } from '@/stores/useTerminalStore';
-import { ProjectActionsButton } from '@/components/layout/ProjectActionsButton';
 import { SessionSwitcherDropdown } from '@/components/session/SessionSwitcherDropdown';
 import { canUseElectronDesktopIPC, invokeDesktop, isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, startDesktopWindowDrag, type UpdateInfo } from '@/lib/desktop';
 import { desktopHostsGet, getDesktopHostApiUrl, locationMatchesHost, redactSensitiveUrl } from '@/lib/desktopHosts';
@@ -1294,38 +1293,9 @@ export const Header: React.FC<HeaderProps> = ({
   }, [currentSessionDiffStats]);
   const hasNonZeroSessionChanges = currentSessionChanges.additions > 0 || currentSessionChanges.deletions > 0;
 
-  const actionDirectory = React.useMemo(() => {
+  const openInAppDirectory = React.useMemo(() => {
     return normalize(openDirectory || activeProject?.path || '');
   }, [activeProject?.path, openDirectory]);
-
-  const activeProjectRef = React.useMemo(() => {
-    if (!activeProject) {
-      return null;
-    }
-    return { id: activeProject.id, path: activeProject.path };
-  }, [activeProject]);
-
-  const lastProjectActionsContextRef = React.useRef<{
-    projectRef: { id: string; path: string };
-    directory: string;
-  } | null>(null);
-
-  React.useEffect(() => {
-    if (!activeProjectRef || !actionDirectory) {
-      return;
-    }
-    lastProjectActionsContextRef.current = {
-      projectRef: activeProjectRef,
-      directory: actionDirectory,
-    };
-  }, [actionDirectory, activeProjectRef]);
-
-  const projectActionsContext = React.useMemo(() => {
-    if (activeProjectRef && actionDirectory) {
-      return { projectRef: activeProjectRef, directory: actionDirectory };
-    }
-    return lastProjectActionsContextRef.current;
-  }, [actionDirectory, activeProjectRef]);
 
   const planModeEnabled = useFeatureFlagsStore((state) => state.planModeEnabled);
   const isSessionPlanAvailable = useSessionUIStore((state) => state.isSessionPlanAvailable);
@@ -1991,7 +1961,7 @@ export const Header: React.FC<HeaderProps> = ({
           </TooltipContent>
           </Tooltip>
       )}
-      <OpenInAppButton directory={actionDirectory} className="mr-1" />
+      <OpenInAppButton directory={openInAppDirectory} className="mr-1" />
       <DesktopServicesMenu
         isDesktopApp={isDesktopApp}
         currentInstanceLabel={currentInstanceLabel}
@@ -2100,13 +2070,6 @@ export const Header: React.FC<HeaderProps> = ({
       )}
 
       <div className="flex min-w-0 flex-1 items-center pl-3">
-        {projectActionsContext && (
-          <ProjectActionsButton
-            projectRef={projectActionsContext.projectRef}
-            directory={projectActionsContext.directory}
-            className="mr-2"
-          />
-        )}
         {!hideSessionControls && (
           <SessionSwitcherDropdown>
             <button
@@ -2295,16 +2258,6 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
-            {projectActionsContext && (
-              <ProjectActionsButton
-                projectRef={projectActionsContext.projectRef}
-                directory={projectActionsContext.directory}
-                compact
-                allowMobile
-                className="h-9"
-              />
-            )}
-
             {/* Mobile Services Menu (Usage + MCP) */}
             <DropdownMenu
               open={isMobileRateLimitsOpen}
