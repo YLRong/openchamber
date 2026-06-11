@@ -17,6 +17,7 @@ import { materializeSessionSnapshots } from "./materialization"
 import { stripMessageDiffSnapshots } from "./sanitize"
 import { sessionEvents } from "@/lib/sessionEvents"
 import { getRuntimeMessageNow } from "./runtime-message-time"
+import { getSessionMetadata, type SessionMetadataRecord } from "@/lib/sessionReviewMetadata"
 
 const MESSAGE_REFETCH_LIMIT = 200
 const MESSAGE_REFETCH_SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
@@ -341,11 +342,13 @@ export async function createSession(
   title?: string,
   directoryOverride?: string | null,
   parentID?: string | null,
+  metadata?: SessionMetadataRecord,
 ): Promise<Session | null> {
   try {
     const session = await opencodeClient.createSession({
       title,
       parentID: parentID ?? undefined,
+      metadata,
     }, directoryOverride ?? dir())
 
     const sessionDirectory = (session as { directory?: string | null }).directory ?? null
@@ -362,6 +365,28 @@ export async function createSession(
     console.error("[session-actions] createSession failed", error)
     return null
   }
+}
+
+export async function patchSessionMetadata(
+  sessionId: string,
+  directory: string | null | undefined,
+  updater: (metadata: SessionMetadataRecord) => SessionMetadataRecord,
+): Promise<Session> {
+  const targetDirectory = directory ?? getSessionDirectory(sessionId)
+  const current = await opencodeClient.getSession(sessionId, targetDirectory)
+  const nextMetadata = updater(getSessionMetadata(current))
+  const updated = await opencodeClient.updateSession(sessionId, { metadata: nextMetadata }, targetDirectory)
+  useGlobalSessionsStore.getState().upsertSession(updated)
+  if (targetDirectory) {
+    const store = _childStores?.children.get(targetDirectory)
+    if (store) {
+      const state = store.getState()
+      store.setState({
+        session: state.session.map((session) => session.id === updated.id ? updated : session),
+      })
+    }
+  }
+  return updated
 }
 
 /** Optimistically remove a session from every live child store that has it. */
@@ -557,6 +582,7 @@ export async function optimisticSend(input: {
   agent?: string
   directory?: string | null
   files?: Array<{ type: "file"; mime: string; url: string; filename: string }>
+  onOptimisticInsert?: () => void
   /** 实际 API 调用，接收本地 optimistic identity 和重试幂等键。 */
   send: (input: { optimisticMessageID: string; clientRequestId: string }) => Promise<string | void>
 }): Promise<void> {
@@ -603,6 +629,7 @@ export async function optimisticSend(input: {
     message: optimisticMessage,
     parts: optimisticParts,
   })
+  input.onOptimisticInsert?.()
 
   // 设置 busy 状态。
   const current = store.getState()
