@@ -15,9 +15,13 @@ const GITHUB_URL = 'https://github.com/btriapitsyn/openchamber';
 
 const MIN_CHECKING_DURATION = 800; // ms
 
-export const AboutSettings: React.FC = () => {
+type AboutSettingsProps = {
+  initialUpdateDialogOpen?: boolean;
+};
+
+export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialogOpen = false }) => {
   const { t } = useI18n();
-  const [updateDialogOpen, setUpdateDialogOpen] = React.useState(false);
+  const [updateDialogOpen, setUpdateDialogOpen] = React.useState(initialUpdateDialogOpen);
   const [showChecking, setShowChecking] = React.useState(false);
   const [openCodeVersion, setOpenCodeVersion] = React.useState<string | null>(null);
   const updateStore = useUpdateStore(useShallow((s) => ({

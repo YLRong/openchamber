@@ -73,6 +73,8 @@ interface SettingsViewProps {
   forceMobile?: boolean;
   /** Rendered inside a window/dialog (skip traffic light padding) */
   isWindowed?: boolean;
+  /** Initial mobile navigation stage for dedicated mobile surfaces. */
+  initialMobileStage?: Extract<MobileStage, 'nav' | 'page-content'>;
   /** Restrict top-level settings navigation to a specific product surface. */
   visiblePageSlugs?: SettingsPageSlug[];
 }
@@ -279,7 +281,7 @@ const SettingsHome: React.FC<{ onOpen: (slug: SettingsPageSlug) => void }> = ({ 
   );
 };
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile, isWindowed, visiblePageSlugs }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile, isWindowed, initialMobileStage = 'nav', visiblePageSlugs }) => {
   const { t } = useI18n();
   const deviceInfo = useDeviceInfo();
   const isMobile = forceMobile ?? deviceInfo.isMobile;
@@ -289,7 +291,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   const setSettingsPage = useUIStore((state) => state.setSettingsPage);
   const settingsSlug = resolveSettingsSlug(settingsPageRaw);
 
-  const [mobileStage, setMobileStage] = React.useState<MobileStage>('nav');
+  const [mobileStage, setMobileStage] = React.useState<MobileStage>(initialMobileStage);
   const autoNavSlugRef = React.useRef<string | null>(null);
 
   const [navWidth, setNavWidth] = React.useState(216);

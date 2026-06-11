@@ -133,7 +133,7 @@ const sendPlainMessage = async (
     modelID: resolved.modelID,
     agent: resolved.agent,
     onOptimisticInsert: () => requestChatForceScrollBottom(sessionID),
-    send: (messageID) => opencodeClient.sendMessage({
+    send: ({ optimisticMessageID, clientRequestId }) => opencodeClient.sendMessage({
       id: sessionID,
       directory,
       providerID: resolved.providerID,
@@ -142,8 +142,9 @@ const sendPlainMessage = async (
       variant: resolved.variant,
       text,
       additionalParts,
-      messageId: messageID,
-    }).then(() => undefined),
+      messageId: optimisticMessageID,
+      clientRequestId,
+    }),
   });
 };
 
