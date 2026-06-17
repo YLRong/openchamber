@@ -12,7 +12,7 @@ import { getWorkspaceBootstrapCopyKeys } from '@/lib/managedRuntimeDiagnostics';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { useManagedRuntimeStore } from '@/stores/useManagedRuntimeStore';
-import { abbreviateManagedSessionId, getWorkspaceStatusToneClassName } from './managedRuntimeHeaderStatusUtils';
+import { formatLimuRuntimeVersionLabel, getWorkspaceStatusToneClassName } from './managedRuntimeHeaderStatusUtils';
 
 type ManagedRuntimeHeaderStatusProps = {
   compact?: boolean;
@@ -29,11 +29,15 @@ const ManagedRuntimeDetails = React.memo(function ManagedRuntimeDetails() {
   const {
     managedSessionId,
     workspaceDir,
+    openchamberVersion,
+    openCodeVersion,
     workspaceBootstrap,
     hubUrl,
   } = useManagedRuntimeStore(useShallow((state) => ({
     managedSessionId: state.managedSessionId,
     workspaceDir: state.workspaceDir,
+    openchamberVersion: state.openchamberVersion,
+    openCodeVersion: state.openCodeVersion,
     workspaceBootstrap: state.workspaceBootstrap,
     hubUrl: state.hubUrl,
   })));
@@ -60,6 +64,34 @@ const ManagedRuntimeDetails = React.memo(function ManagedRuntimeDetails() {
       </div>
 
       <div className="space-y-2 rounded-lg border border-[var(--interactive-border)] bg-[var(--surface-muted)]/40 p-2">
+        <div className="min-w-0">
+          <div className="typography-micro text-muted-foreground">
+            Runtime version
+          </div>
+          <div className="font-mono text-[11px] leading-snug text-foreground">
+            {formatLimuRuntimeVersionLabel(openchamberVersion, openCodeVersion)}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="min-w-0">
+            <div className="typography-micro text-muted-foreground">
+              OpenChamber
+            </div>
+            <div className="truncate font-mono text-[11px] leading-snug text-foreground">
+              {openchamberVersion ?? 'unknown'}
+            </div>
+          </div>
+          <div className="min-w-0">
+            <div className="typography-micro text-muted-foreground">
+              OpenCode
+            </div>
+            <div className="truncate font-mono text-[11px] leading-snug text-foreground">
+              {openCodeVersion ?? 'unknown'}
+            </div>
+          </div>
+        </div>
+
         <div className="min-w-0">
           <div className="typography-micro text-muted-foreground">
             {t('layout.managedRuntime.sessionLabel')}
@@ -114,11 +146,13 @@ export const ManagedRuntimeHeaderStatus = React.memo(function ManagedRuntimeHead
   const { t } = useI18n();
   const {
     managed,
-    managedSessionId,
+    openchamberVersion,
+    openCodeVersion,
     workspaceBootstrap,
   } = useManagedRuntimeStore(useShallow((state) => ({
     managed: state.managed,
-    managedSessionId: state.managedSessionId,
+    openchamberVersion: state.openchamberVersion,
+    openCodeVersion: state.openCodeVersion,
     workspaceBootstrap: state.workspaceBootstrap,
   })));
 
@@ -126,8 +160,7 @@ export const ManagedRuntimeHeaderStatus = React.memo(function ManagedRuntimeHead
     return null;
   }
 
-  const bootstrapCopy = getWorkspaceBootstrapCopyKeys(workspaceBootstrap);
-  const shortSessionId = abbreviateManagedSessionId(managedSessionId);
+  const versionLabel = formatLimuRuntimeVersionLabel(openchamberVersion, openCodeVersion);
 
   return (
     <DropdownMenu>
@@ -136,29 +169,23 @@ export const ManagedRuntimeHeaderStatus = React.memo(function ManagedRuntimeHead
           type="button"
           className={cn(
             'app-region-no-drag flex min-w-0 items-center rounded-lg border border-[var(--interactive-border)] bg-[var(--surface-elevated)] text-left transition-colors hover:bg-[var(--interactive-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
-            compact ? 'h-9 max-w-[8.5rem] gap-1.5 px-2' : 'h-8 max-w-[22rem] gap-2 px-2.5',
+            compact ? 'h-9 max-w-[12rem] px-2' : 'h-8 max-w-[18rem] px-2.5',
             className
           )}
           aria-label={t('layout.managedRuntime.detailsAria')}
-          title={managedSessionId ?? t('layout.managedRuntime.title')}
+          title={versionLabel}
         >
+          <span className="min-w-0 truncate font-mono text-[11px] font-semibold leading-none text-foreground">
+            {versionLabel}
+          </span>
           <span className={cn(
-            'shrink-0 rounded-full border px-1.5 py-px typography-micro font-semibold',
-            getWorkspaceStatusToneClassName(workspaceBootstrap.state)
-          )}>
-            {compact ? t('layout.managedRuntime.compactLabel') : t('layout.managedRuntime.title')}
-          </span>
-          <span className="min-w-0 truncate font-mono text-[11px] leading-none text-foreground">
-            {shortSessionId ?? t('layout.managedRuntime.sessionPending')}
-          </span>
-          {!compact ? (
-            <span className={cn(
-              'shrink-0 rounded-full border px-1.5 py-px typography-micro font-medium',
-              getWorkspaceStatusToneClassName(workspaceBootstrap.state)
-            )}>
-              {t(bootstrapCopy.stateLabelKey)}
-            </span>
-          ) : null}
+            'ml-2 h-1.5 w-1.5 shrink-0 rounded-full',
+            workspaceBootstrap.state === 'failed'
+              ? 'bg-[var(--status-error)]'
+              : workspaceBootstrap.state === 'succeeded'
+                ? 'bg-[var(--status-success)]'
+                : 'bg-muted-foreground/50'
+          )} />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" sideOffset={6} portalToBody>

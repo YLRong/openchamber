@@ -10,6 +10,15 @@ export function abbreviateManagedSessionId(sessionId: string | null | undefined)
   return `${sessionId.slice(0, 8)}…${sessionId.slice(-4)}`;
 }
 
+export function formatLimuRuntimeVersionLabel(
+  openchamberVersion: string | null | undefined,
+  openCodeVersion: string | null | undefined,
+): string {
+  const normalizedOpenChamberVersion = openchamberVersion?.trim() || 'unknown';
+  const normalizedOpenCodeVersion = openCodeVersion?.trim() || 'unknown';
+  return `LIMU-${normalizedOpenChamberVersion}-${normalizedOpenCodeVersion}`;
+}
+
 export function getWorkspaceStatusToneClassName(state: WorkspaceBootstrapState): string {
   switch (state) {
     case 'failed':

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   abbreviateManagedSessionId,
+  formatLimuRuntimeVersionLabel,
   getWorkspaceStatusToneClassName,
 } from './managedRuntimeHeaderStatusUtils';
 
@@ -16,5 +17,10 @@ describe('ManagedRuntimeHeaderStatus helpers', () => {
     expect(getWorkspaceStatusToneClassName('failed')).toContain('status-error');
     expect(getWorkspaceStatusToneClassName('succeeded')).toContain('status-success');
     expect(getWorkspaceStatusToneClassName('pending')).toContain('interactive-border');
+  });
+
+  test('formats Limu runtime version label from actual versions', () => {
+    expect(formatLimuRuntimeVersionLabel('1.13.1', '1.17.7')).toBe('LIMU-1.13.1-1.17.7');
+    expect(formatLimuRuntimeVersionLabel(' 1.13.1 ', null)).toBe('LIMU-1.13.1-unknown');
   });
 });
