@@ -7,6 +7,7 @@ describe('normalizeManagedRuntimeInfo', () => {
     const info = normalizeManagedRuntimeInfo({
       mode: 'runtime',
       managed: true,
+      openchamberVersion: '1.13.1',
       managedSessionId: 'session-1',
       hubUrl: 'http://hub.local/session-1',
       workspaceDir: '/workspace',
@@ -21,10 +22,12 @@ describe('normalizeManagedRuntimeInfo', () => {
         selfUpdate: false,
         remoteInstances: false,
       },
-    });
+    }, '1.17.7');
 
     expect(info.mode).toBe('runtime');
     expect(info.managed).toBe(true);
+    expect(info.openchamberVersion).toBe('1.13.1');
+    expect(info.openCodeVersion).toBe('1.17.7');
     expect(info.managedSessionId).toBe('session-1');
     expect(info.hubUrl).toBe('http://hub.local/session-1');
     expect(info.workspaceDir).toBe('/workspace');
@@ -50,6 +53,8 @@ describe('normalizeManagedRuntimeInfo', () => {
     const info = normalizeManagedRuntimeInfo({ managed: false });
 
     expect(info.managed).toBe(false);
+    expect(info.openchamberVersion).toBeNull();
+    expect(info.openCodeVersion).toBeNull();
     expect(info.workspaceBootstrap.available).toBe(false);
     expect(info.workspaceBootstrap.state).toBe('pending');
   });
