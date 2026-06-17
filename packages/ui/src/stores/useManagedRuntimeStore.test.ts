@@ -17,6 +17,8 @@ function resetStore() {
     managedSessionId: null,
     hubUrl: null,
     workspaceDir: null,
+    openchamberVersion: null,
+    openCodeVersion: null,
     workspaceBootstrap: DEFAULT_WORKSPACE_BOOTSTRAP_DIAGNOSTICS,
     features: {
       tunnel: true,
@@ -46,6 +48,8 @@ describe('useManagedRuntimeStore', () => {
       managedSessionId: 'session-1',
       hubUrl: 'http://hub.local/session-1',
       workspaceDir: '/workspace',
+      openchamberVersion: '1.13.1',
+      openCodeVersion: '1.17.7',
       workspaceBootstrap,
       features,
     };
@@ -55,6 +59,8 @@ describe('useManagedRuntimeStore', () => {
     const state = useManagedRuntimeStore.getState();
     expect(state.managed).toBe(true);
     expect(state.managedSessionId).toBe('session-1');
+    expect(state.openchamberVersion).toBe('1.13.1');
+    expect(state.openCodeVersion).toBe('1.17.7');
     expect(state.workspaceBootstrap.available).toBe(true);
     expect(state.workspaceBootstrap.state).toBe('failed');
     expect(state.workspaceBootstrap.reason).toBe('workspace_not_empty');
@@ -70,6 +76,8 @@ describe('useManagedRuntimeStore', () => {
       managedSessionId: 'session-1',
       hubUrl: null,
       workspaceDir: '/workspace',
+      openchamberVersion: '1.13.1',
+      openCodeVersion: '1.17.7',
       workspaceBootstrap: normalizeWorkspaceBootstrapDiagnostics({
         state: 'running',
         reason: 'git_clone_running',

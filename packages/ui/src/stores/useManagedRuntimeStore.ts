@@ -18,6 +18,8 @@ export interface ManagedRuntimeInfo {
   managedSessionId: string | null;
   hubUrl: string | null;
   workspaceDir: string | null;
+  openchamberVersion: string | null;
+  openCodeVersion: string | null;
   workspaceBootstrap: WorkspaceBootstrapDiagnostics;
   features: ManagedRuntimeFeatures;
 }
@@ -43,6 +45,8 @@ export const useManagedRuntimeStore = create<ManagedRuntimeState>((set) => ({
   managedSessionId: null,
   hubUrl: null,
   workspaceDir: null,
+  openchamberVersion: null,
+  openCodeVersion: null,
   workspaceBootstrap: DEFAULT_WORKSPACE_BOOTSTRAP_DIAGNOSTICS,
   features: defaultFeatures,
   isLoading: true,
@@ -66,6 +70,8 @@ export const useManagedRuntimeStore = create<ManagedRuntimeState>((set) => ({
       && state.managedSessionId === info.managedSessionId
       && state.hubUrl === info.hubUrl
       && state.workspaceDir === info.workspaceDir
+      && state.openchamberVersion === info.openchamberVersion
+      && state.openCodeVersion === info.openCodeVersion
       && state.workspaceBootstrap === workspaceBootstrap
       && state.features === features
       && state.isLoading === false
@@ -81,6 +87,8 @@ export const useManagedRuntimeStore = create<ManagedRuntimeState>((set) => ({
       managedSessionId: info.managedSessionId,
       hubUrl: info.hubUrl,
       workspaceDir: info.workspaceDir,
+      openchamberVersion: info.openchamberVersion,
+      openCodeVersion: info.openCodeVersion,
       workspaceBootstrap,
       features,
       isLoading: false,

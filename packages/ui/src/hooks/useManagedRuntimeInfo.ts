@@ -18,6 +18,10 @@ interface SystemInfoResponse {
   features?: Partial<ManagedRuntimeFeatures>;
 }
 
+interface OpenCodeUpgradeStatusResponse {
+  currentVersion?: unknown;
+}
+
 const POLL_INTERVAL_MS = 30_000;
 
 const availableFeatures: ManagedRuntimeFeatures = {
@@ -39,6 +43,10 @@ const MANAGED_RUNTIME_SCOPED_STORAGE_KEYS = [
   'oc.sessions.groupOrder',
   'openchamber.pwaRecentSessions',
 ];
+
+function normalizeVersion(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
 
 function resetManagedRuntimeStorageIfNeeded(info: ManagedRuntimeInfo): boolean {
   if (typeof window === 'undefined' || !info.managed || info.mode !== 'runtime' || !info.managedSessionId) {
@@ -63,7 +71,10 @@ function resetManagedRuntimeStorageIfNeeded(info: ManagedRuntimeInfo): boolean {
   }
 }
 
-export function normalizeManagedRuntimeInfo(data: SystemInfoResponse | null | undefined): ManagedRuntimeInfo {
+export function normalizeManagedRuntimeInfo(
+  data: SystemInfoResponse | null | undefined,
+  openCodeVersion: string | null = null,
+): ManagedRuntimeInfo {
   if (!data || typeof data !== 'object' || data.managed !== true) {
     return {
       mode: null,
@@ -71,6 +82,8 @@ export function normalizeManagedRuntimeInfo(data: SystemInfoResponse | null | un
       managedSessionId: null,
       hubUrl: null,
       workspaceDir: null,
+      openchamberVersion: normalizeVersion(data?.openchamberVersion),
+      openCodeVersion,
       workspaceBootstrap: normalizeWorkspaceBootstrapDiagnostics(null),
       features: availableFeatures,
     };
@@ -82,6 +95,8 @@ export function normalizeManagedRuntimeInfo(data: SystemInfoResponse | null | un
     managedSessionId: data.managedSessionId ?? null,
     hubUrl: data.hubUrl ?? null,
     workspaceDir: data.workspaceDir ?? null,
+    openchamberVersion: normalizeVersion(data.openchamberVersion),
+    openCodeVersion,
     workspaceBootstrap: normalizeWorkspaceBootstrapDiagnostics(data.workspaceBootstrap),
     features: {
       tunnel: data.features?.tunnel ?? false,
@@ -92,6 +107,22 @@ export function normalizeManagedRuntimeInfo(data: SystemInfoResponse | null | un
   };
 }
 
+async function fetchOpenCodeVersion(): Promise<string | null> {
+  try {
+    const response = await runtimeFetch('/api/opencode/upgrade-status', {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const data = (await response.json().catch(() => null)) as OpenCodeUpgradeStatusResponse | null;
+    return normalizeVersion(data?.currentVersion);
+  } catch {
+    return null;
+  }
+}
+
 async function fetchManagedRuntimeInfo(): Promise<ManagedRuntimeInfo> {
   const response = await runtimeFetch('/api/system/info', {
     method: 'GET',
@@ -100,8 +131,11 @@ async function fetchManagedRuntimeInfo(): Promise<ManagedRuntimeInfo> {
   if (!response.ok) {
     throw new Error(`Server responded with ${response.status}`);
   }
-  const data = (await response.json()) as SystemInfoResponse;
-  return normalizeManagedRuntimeInfo(data);
+  const [data, openCodeVersion] = await Promise.all([
+    response.json() as Promise<SystemInfoResponse>,
+    fetchOpenCodeVersion(),
+  ]);
+  return normalizeManagedRuntimeInfo(data, openCodeVersion);
 }
 
 export function useManagedRuntimeInfo() {
@@ -148,6 +182,8 @@ export function useManagedRuntime() {
     managedSessionId: s.managedSessionId,
     hubUrl: s.hubUrl,
     workspaceDir: s.workspaceDir,
+    openchamberVersion: s.openchamberVersion,
+    openCodeVersion: s.openCodeVersion,
     workspaceBootstrap: s.workspaceBootstrap,
     features: s.features,
     isLoading: s.isLoading,
