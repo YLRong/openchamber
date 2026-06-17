@@ -712,6 +712,7 @@ export const Header: React.FC<HeaderProps> = ({
   const { t } = useI18n();
   const setSessionSwitcherOpen = useUIStore((state) => state.setSessionSwitcherOpen);
   const toggleSidebar = useUIStore((state) => state.toggleSidebar);
+  const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
   const toggleBottomTerminal = useUIStore((state) => state.toggleBottomTerminal);
   const toggleRightSidebar = useUIStore((state) => state.toggleRightSidebar);
   const setSettingsDialogOpen = useUIStore((state) => state.setSettingsDialogOpen);
@@ -1568,6 +1569,31 @@ export const Header: React.FC<HeaderProps> = ({
     return 'pl-3';
   }, [isDesktopApp, isDesktopWindowFullscreen, isMacPlatform, isTabletStandalonePwa]);
 
+  const titlebarLeftInset = React.useMemo(() => {
+    if (isDesktopApp && isMacPlatform && !isDesktopWindowFullscreen) {
+      return '5.5rem';
+    }
+    if (isTabletStandalonePwa) {
+      return 'max(calc(0.75rem + var(--oc-wco-left-inset, 0px)), 5.5rem)';
+    }
+    if ((!isDesktopApp || isWindowsElectronDesktop) && !isVSCode) {
+      return 'calc(0.75rem + var(--oc-wco-left-inset, 0px))';
+    }
+    return '0.75rem';
+  }, [isDesktopApp, isDesktopWindowFullscreen, isMacPlatform, isTabletStandalonePwa, isVSCode, isWindowsElectronDesktop]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+    document.documentElement.style.setProperty('--oc-titlebar-left-inset', titlebarLeftInset);
+  }, [titlebarLeftInset]);
+
+  const headerInsetSpacerWidth = isSidebarOpen ? '0.75rem' : 'var(--oc-titlebar-left-inset, 0.75rem)';
+  const headerControlsSpacerWidth = isSidebarOpen
+    ? '0px'
+    : 'calc(var(--oc-titlebar-controls-width, 5.5rem) + 0.5rem)';
+
   useEffect(() => {
     if (!isDesktopApp || !isMacPlatform) {
       setIsDesktopWindowFullscreen(false);
@@ -2112,20 +2138,13 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="truncate typography-ui-label text-[14px] font-normal leading-tight text-foreground max-w-full">
                 {isNewSessionDraftOpen ? t('sessions.switcher.draftTitle') : currentSessionTitle}
               </span>
-              {(activeProjectLabel || currentBranchLabel || (!isNewSessionDraftOpen && (hasNonZeroSessionChanges || worktreeBadgeKind))) ? (
+              {(activeProjectLabel || currentBranchLabel || (!isNewSessionDraftOpen && worktreeBadgeKind)) ? (
                 <span className="flex min-w-0 max-w-full items-center gap-1.5 truncate typography-micro text-[10.5px] font-normal leading-tight text-muted-foreground/75">
                   {activeProjectLabel ? <span className="truncate">{activeProjectLabel}</span> : null}
                   {currentBranchLabel ? (
                     <span className="inline-flex min-w-0 items-center gap-0.5">
                       <Icon name="git-branch" className="h-3 w-3 flex-shrink-0 text-muted-foreground/70" />
                       <span className="truncate">{currentBranchLabel}</span>
-                    </span>
-                  ) : null}
-                  {!isNewSessionDraftOpen && hasNonZeroSessionChanges ? (
-                    <span className="inline-flex flex-shrink-0 items-center gap-0 text-[0.92em]">
-                      <span className="text-status-success/80">+{currentSessionChanges.additions}</span>
-                      <span className="text-muted-foreground/60">/</span>
-                      <span className="text-status-error/65">-{currentSessionChanges.deletions}</span>
                     </span>
                   ) : null}
                   {!isNewSessionDraftOpen && worktreeBadgeKind ? (
